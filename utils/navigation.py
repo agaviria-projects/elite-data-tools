@@ -83,3 +83,18 @@ def mostrar_generador_ans(panel):
     limpiar_panel(panel)
 
     crear_generador_ans(panel)
+
+# ==========================================
+# VALIDACIÓN MATERIALES
+# ==========================================
+
+def mostrar_validacion_materiales(panel):
+    """
+    Muestra el módulo Validación Materiales.
+    """
+
+    from modules.validacion_materiales import crear_validacion_materiales
+
+    limpiar_panel(panel)
+
+    crear_validacion_materiales(panel)    

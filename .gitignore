@@ -53,6 +53,10 @@ temp/
 tmp/
 outputs/
 
+# Archivos generados por Control ANS
+Control_ANS_v5/data_raw/pendientes_*.csv
+Control_ANS_v5/data_mo_materiales/Liquidacion_Acta_Clientes-*.txt
+
 Control_ANS_v5/control-ans-elite-*.json
 Control_ANS_v5/control-ans-evidencias-*.json
 
