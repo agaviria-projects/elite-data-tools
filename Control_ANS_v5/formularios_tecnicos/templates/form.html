@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Formulario Técnicos - ANS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            background-color: #f5f7f8;
+            font-family: "Segoe UI", sans-serif;
+        }
+        .card {
+            border-radius: 15px;
+            border: none;
+        }
+        .btn {
+            font-size: 1rem;
+            border-radius: 10px;
+        }
+        .form-control, .form-select {
+            font-size: 0.95rem;
+            border-radius: 8px;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-top: 10px;
+        }
+        .alert {
+            font-size: 0.95rem;
+            border-radius: 10px;
+            text-align: center;
+        }
+        @media (max-width: 768px) {
+            .card { margin: 5px; }
+            .btn { width: 100%; margin-top: 5px; }
+            .d-flex { flex-direction: column; }
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-top: 10px;
+            line-height: 1.2;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Encabezado corporativo -->
+<div class="d-flex align-items-center justify-content-center flex-wrap py-2 mb-3" style="background-color:#eef2f3; border-bottom:3px solid #198754;">
+    <img src="{{ url_for('static', filename='elite.png') }}" alt="Logo ELITE" width="70" height="70">
+    <h4 class="m-0 fw-bold ms-2">ELITE <span class="text-success">Ingenieros S.A.S.</span></h4>
+    <p class="text-secondary mb-0 ms-2">Control ANS</p>
+</div>
+
+<div class="container">
+    <div class="card shadow-sm mx-auto" style="max-width: 600px;">
+        <div class="card-body">
+            <h5 class="text-center mb-3">Reporte Técnico ANS</h5>
+
+            <!-- ✅ Bloque de mensajes flash -->
+            {% with mensajes = get_flashed_messages(with_categories=true) %}
+              {% if mensajes %}
+                {% for tipo, msg in mensajes %}
+                  <div class="alert alert-{{ tipo }} alert-dismissible fade show" role="alert">
+                    {{ msg }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <form id="formANS" method="POST" enctype="multipart/form-data">
+                <div class="mb-3 d-flex">
+                    <input type="text" name="pedido" id="pedido" class="form-control me-2" placeholder="Número de Pedido" required>
+                    <button type="button" id="btnBuscar" class="btn btn-primary px-3">Buscar</button>
+                </div>
+
+                <div id="infoPedido" class="border rounded p-3 bg-white mb-3" style="display:none;">
+                    <p><strong>ClienteID:</strong> <span id="clienteid"></span></p>
+                    <p><strong>Cliente:</strong> <span id="nombre_cliente"></span></p>
+                    <p><strong>Dirección:</strong> <span id="direccion"></span></p>
+                    <p><strong>Teléfono:</strong> <span id="telefono"></span> | <strong>Celular:</strong> <span id="celular"></span></p>
+                    <p><strong>Fecha Límite ANS:</strong> <span id="fecha_limite"></span></p>
+                    <p><strong>Estado:</strong> <span id="estado"></span></p>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Observación</label>
+                    <textarea name="observacion" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Estado</label>
+                    <select name="estado" class="form-select" required>
+                        <option value="Ejecutado en Campo">Ejecutado en Campo</option>
+                        <option value="Descartado">Descartado</option>
+                        <option value="Pendiente Visita">Pendiente Visita</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">¿Cómo envía la evidencia?</label>
+                    <select id="metodo_envio" name="metodo_envio" class="form-select" required>
+                        <option value="Formulario">Subir desde formulario</option>
+                        <option value="WhatsApp">Por WhatsApp</option>
+                        <option value="Correo">Por correo</option>
+                        <option value="No aplica">No aplica</option>
+                    </select>
+                </div>
+
+                <div id="bloqueArchivos">
+                    <div class="mb-3">
+                        <label class="form-label">Subir evidencias (PDF o imágenes)</label>
+                        <input type="file" 
+                            name="archivos_evidencia" 
+                            class="form-control" 
+                            accept=".pdf,image/*" 
+                            multiple 
+                            capture="environment">
+                        <small class="text-muted">
+                            📷 Puede tomar fotos con la cámara o elegir archivos PDF / imágenes desde la galería.
+                        </small>
+                    </div>
+                </div>
+
+                <!-- ✅ BOTONES DE ACCIÓN -->
+                <div class="d-flex justify-content-between flex-wrap gap-2 mt-3">
+                    <button type="submit" class="btn btn-success flex-fill">
+                        <i class="bi bi-check-circle"></i> Enviar Registro
+                    </button>
+
+                    <button type="button" id="btnLimpiar" class="btn btn-secondary flex-fill">
+                        <i class="bi bi-x-circle"></i> Limpiar
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ✅ FOOTER -->
+        <div class="card-footer footer">
+            <p class="mb-0">© 2025 ELITE Ingenieros S.A.S.</p>
+            <p class="mb-0">Pasión por lo que hacemos.</p>
+        </div>
+    </div>
+</div>
+
+<!-- 🔧 SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+$(document).ready(function() {
+
+    console.log("✅ Script cargado correctamente");
+
+    // 🔍 Buscar pedido en FENIX o REGISTROS
+    $("#btnBuscar").on("click", function() {
+        let pedido = $("#pedido").val().trim();
+        if (pedido === "") {
+            $(".card-body").prepend(`
+                <div id="alertaEstado" class="alert alert-warning text-center">
+                    ⚠️ Ingrese un número de pedido válido.
+                </div>
+            `);
+            return;
+        }
+
+        $.getJSON(`/buscar_pedido/${pedido}`, function(data) {
+            $("#alertaEstado").remove();
+            $("#infoPedido").hide();
+
+            if (data.error) {
+                $(".card-body").prepend(`
+                    <div id="alertaEstado" class="alert alert-danger text-center">
+                        ❌ ${data.error}
+                    </div>
+                `);
+            } 
+            else if (data.origen === "registro") {
+                $(".card-body").prepend(`
+                    <div id="alertaEstado" class="alert alert-info text-center">
+                        ${data.mensaje}
+                    </div>
+                `);
+                $("#estado").text(data.estado_real);
+                $("#infoPedido").show();
+            } 
+            else if (data.origen === "fenix") {
+                $("#clienteid").text(data.clienteid);
+                $("#nombre_cliente").text(data.nombre_cliente);
+                $("#direccion").text(data.direccion);
+                $("#telefono").text(data.telefono);
+                $("#celular").text(data.celular);
+                $("#fecha_limite").text(data.fecha_limite_ans);
+                $("#estado").text(data.estado_fenix);
+                $("#infoPedido").show();
+                $(".card-body").prepend(`
+                    <div id="alertaEstado" class="alert alert-success text-center">
+                        ✅ Pedido encontrado correctamente en FENIX.
+                    </div>
+                `);
+            }
+        });
+    });
+
+    // 🗂 Mostrar u ocultar bloque de archivos
+    $("#metodo_envio").on("change", function() {
+        if ($(this).val() === "Formulario") {
+            $("#bloqueArchivos").show();
+        } else {
+            $("#bloqueArchivos").hide();
+        }
+    }).trigger("change");
+
+    // ♻ Limpiar formulario completamente
+    $("#btnLimpiar").on("click", function() {
+        $("#formANS")[0].reset();
+        $("#infoPedido").hide();
+        $("#bloqueArchivos").show();
+        $(".alert").remove();
+    });
+
+}); // fin document.ready
+</script>
+
+</body>
+</html>
+

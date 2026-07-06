@@ -1,0 +1,60 @@
+# ======================================
+# ELITE DATA TOOLS
+# ======================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Entornos virtuales
+venv/
+.venv/
+.env/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Excel temporales
+~$*.xlsx
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store
+
+# ======================================
+# CONTROL ANS
+# ======================================
+
+Control_ANS_v5/data_clean/
+Control_ANS_v5/data_output/
+
+# ======================================
+# ACTAS
+# ======================================
+
+Proyecto_Actas/CONSOLIDADO/
+Proyecto_Actas/UNIFICADAS/
+
+# ======================================
+# PDFs temporales
+# ======================================
+
+temp/
+tmp/
+outputs/
+
+Control_ANS_v5/control-ans-elite-*.json
+Control_ANS_v5/control-ans-evidencias-*.json
+
+__pycache__/
+*.pyc

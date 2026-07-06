@@ -53,3 +53,33 @@ def mostrar_informe_actas(panel):
 
     crear_informe_actas(panel)
 
+# ==========================================
+# CONTROL ANS
+# ==========================================
+
+def mostrar_control_ans(panel):
+    """
+    Muestra el módulo Control ANS.
+    """
+
+    from modules.control_ans import crear_control_ans
+
+    limpiar_panel(panel)
+
+    crear_control_ans(panel)
+
+
+# ==========================================
+# GENERADOR INFORME ANS
+# ==========================================
+
+def mostrar_generador_ans(panel):
+    """
+    Muestra el módulo Generador Informe ANS.
+    """
+
+    from modules.generador_ans import crear_generador_ans
+
+    limpiar_panel(panel)
+
+    crear_generador_ans(panel)
