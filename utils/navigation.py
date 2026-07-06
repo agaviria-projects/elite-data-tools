@@ -98,3 +98,18 @@ def mostrar_validacion_materiales(panel):
     limpiar_panel(panel)
 
     crear_validacion_materiales(panel)    
+
+# ==========================================
+# COMPRESOR PDF
+# ==========================================
+
+def mostrar_compresor_pdf(panel):
+    """
+    Muestra el módulo Compresor PDF.
+    """
+
+    from modules.compresor_pdf import crear_compresor_pdf
+
+    limpiar_panel(panel)
+
+    crear_compresor_pdf(panel)
