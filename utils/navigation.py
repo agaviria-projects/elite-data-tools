@@ -113,3 +113,18 @@ def mostrar_compresor_pdf(panel):
     limpiar_panel(panel)
 
     crear_compresor_pdf(panel)
+
+# ==========================================
+# WHATSAPP + CONTROL ANS
+# ==========================================
+
+def mostrar_whatsapp(panel):
+    """
+    Muestra el módulo WhatsApp + Control ANS.
+    """
+
+    from modules.whatsapp_control import crear_whatsapp
+
+    limpiar_panel(panel)
+
+    crear_whatsapp(panel)

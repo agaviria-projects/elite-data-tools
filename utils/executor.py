@@ -10,6 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+print("=" * 60)
+print("EXECUTOR V2 CARGADO")
+print("=" * 60)
+
 
 # =========================================================
 # EJECUTAR SCRIPT PYTHON
@@ -18,7 +22,8 @@ from pathlib import Path
 def ejecutar_python(
     script,
     carpeta=None,
-    callback=None
+    callback=None,
+    argumentos=None
 ):
     """
     Ejecuta un script Python.
@@ -40,13 +45,20 @@ def ejecutar_python(
     if carpeta is None:
         carpeta = script.parent
 
+    comando = [
+        sys.executable,
+        "-u",
+        "-X",
+        "utf8",
+        str(script)
+    ]
+
+    if argumentos:
+        comando.extend(argumentos)
+
     proceso = subprocess.Popen(
-        [
-            sys.executable,
-            "-X",
-            "utf8",
-            str(script)
-        ],
+        comando,
+
         cwd=carpeta,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -77,7 +89,8 @@ from pathlib import Path
 def ejecutar_secuencia(
     carpeta,
     pasos,
-    callback=None
+    callback=None,
+    argumentos=None
 ):
     """
     Ejecuta varios scripts en orden.
@@ -102,9 +115,15 @@ def ejecutar_secuencia(
         ruta = carpeta / script
 
         codigo, salida = ejecutar_python(
+
             ruta,
+
             carpeta,
-            callback
+
+            callback,
+
+            argumentos
+
         )
 
         if codigo != 0:

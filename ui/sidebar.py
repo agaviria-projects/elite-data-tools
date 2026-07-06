@@ -1,7 +1,7 @@
 import ttkbootstrap as ttk
 from tkinter import messagebox
 from ui.styles import *
-from utils.navigation import mostrar_home, mostrar_informe_actas,mostrar_generador_ans,mostrar_validacion_materiales,mostrar_compresor_pdf
+from utils.navigation import mostrar_home, mostrar_informe_actas,mostrar_generador_ans,mostrar_validacion_materiales,mostrar_compresor_pdf, mostrar_whatsapp
 MENU = [
     ('home','🏠','Inicio'),
 
@@ -13,9 +13,8 @@ MENU = [
 
     ('pdf','📦','Zip PDF'),
 
-    ('draco','📄','Actas DRACO'),
+    ('whatsapp','💬','WhatsApp + ANS'),
 
-    ('nexus','🗂','Nexus')
 ]
 
 items_menu={}; barra_menu={}
@@ -32,6 +31,7 @@ def abrir_modulo(m,p):
     elif m== 'ans': mostrar_generador_ans(p)
     elif m == "materiales": mostrar_validacion_materiales(p)
     elif m=="pdf": mostrar_compresor_pdf(p)
+    elif m == "whatsapp": mostrar_whatsapp(p)
 def salir(app):
     if messagebox.askyesno('Salir','¿Desea salir de ELITE Data Tools?'): app.destroy()
 def crear_sidebar(app,panel):
