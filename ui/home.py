@@ -1,7 +1,14 @@
 import ttkbootstrap as ttk
 
+from PIL import Image, ImageTk
+
+from pathlib import Path
+
 from ui.styles import *
 
+BASE = Path(__file__).resolve().parent.parent
+
+RUTA_LOGO = BASE / "assets" / "fondo_elite.png"
 
 def crear_home(parent):
     """
@@ -51,14 +58,17 @@ def crear_home(parent):
     ttk.Label(
         home,
         text=(
-            "Seleccione un módulo desde el menú lateral.\n\n"
-            "Desde esta Suite podrá ejecutar todas las herramientas\n"
-            "desarrolladas para ELITE Ingenieros S.A.S."
+            "ELITE DATA TOOLS es la plataforma corporativa desarrollada para "
+            "ELITE Ingenieros S.A.S., diseñada para centralizar herramientas "
+            "de automatización, procesamiento de datos, generación de informes "
+            "y optimización de procesos empresariales desde un único entorno.\n\n"
         ),
+        wraplength=950,
         justify="left",
         font=FUENTE_NORMAL
     ).pack(
-        anchor="w"
+        anchor="w",
+        pady=(10, 0)
     )
 
     # ==========================================
@@ -71,6 +81,29 @@ def crear_home(parent):
         fill="x",
         pady=30
     )
+    # ==========================================
+    # LOGO ELITE
+    # ==========================================
 
-    return home
+    imagen = Image.open(RUTA_LOGO)
 
+    ancho_max = 650
+    alto_max = 220
+
+    imagen.thumbnail((ancho_max, alto_max), Image.LANCZOS)
+
+    logo = ImageTk.PhotoImage(imagen)
+
+    logo = ImageTk.PhotoImage(imagen)
+
+    lbl_logo = ttk.Label(
+        home,
+        image=logo
+    )
+
+    # Evita que Python elimine la imagen de memoria
+    lbl_logo.image = logo
+
+    lbl_logo.pack(
+        pady=(15, 20)
+    )

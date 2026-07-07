@@ -9,7 +9,7 @@ MENU = [
 
     ('ans','📈','Generador Informe ANS'),
 
-    ('materiales','🧰','Validación Materiales'),
+    ('materiales','🛠️','Validación Materiales'),
 
     ('pdf','📦','Zip PDF'),
 

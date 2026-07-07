@@ -147,7 +147,7 @@ def crear_validacion_materiales(panel):
 
         vista,
 
-        text="📦 Validación Mano de Obra Vs Materiales",
+        text="🛠️ Validación Mano de Obra Vs Materiales",
 
         font=("Segoe UI", 24, "bold"),
 
