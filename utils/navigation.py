@@ -128,3 +128,19 @@ def mostrar_whatsapp(panel):
     limpiar_panel(panel)
 
     crear_whatsapp(panel)
+
+
+# ==========================================
+# CONSOLIDADOR EXCEL
+# ==========================================
+
+def mostrar_consolidador_excel(panel):
+    """
+    Muestra el módulo Consolidador Excel.
+    """
+
+    from modules.consolidador_excel import crear_consolidador_excel
+
+    limpiar_panel(panel)
+
+    crear_consolidador_excel(panel)

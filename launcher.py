@@ -1,11 +1,18 @@
 import ttkbootstrap as ttk
 
+from pathlib import Path
+
 from ui.styles import *
 from ui.header import crear_header
 from ui.sidebar import crear_sidebar
 from ui.panel import crear_panel
 from ui.footer import crear_footer
 from utils.navigation import mostrar_home
+
+
+BASE = Path(__file__).resolve().parent
+
+ICONO = BASE / "assets" / "LOGO.ico"
 
 # ==========================================
 # VENTANA PRINCIPAL
@@ -16,6 +23,8 @@ app = ttk.Window(
 )
 
 app.title("ELITE Data Tools")
+
+app.iconbitmap(str(ICONO))
 
 app.geometry("1300x750")
 
