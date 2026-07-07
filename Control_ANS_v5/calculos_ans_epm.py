@@ -107,11 +107,24 @@ print(f"📂 Archivo cargado: {ruta_input.name} ({len(df)} registros)")
 # ------------------------------------------------------------
 columnas_clave = ["PEDIDO", "FECHA_INICIO_ANS", "TIPO_DIRECCION", "ACTIVIDAD"]
 
+from pandas.api.types import is_datetime64_any_dtype
+
 for col in columnas_clave:
-    if np.issubdtype(df[col].dtype, np.datetime64):
-        df[col] = df[col].apply(lambda x: np.nan if pd.isna(x) else x)
+
+    if is_datetime64_any_dtype(df[col]):
+
+        df[col] = df[col].apply(
+            lambda x: np.nan if pd.isna(x) else x
+        )
+
     else:
-        df[col] = df[col].apply(lambda x: np.nan if str(x).strip() == "" or str(x).upper() in ["NAN", "NONE", "NULL"] else x)
+
+        df[col] = df[col].apply(
+            lambda x: np.nan
+            if str(x).strip() == ""
+            or str(x).upper() in ["NAN", "NONE", "NULL"]
+            else x
+        )
 
 # Nota: la advertencia "Parsing dates..." es solo informativa y no afecta el flujo.
 # Se mantiene 'dayfirst=True' para compatibilidad con formatos DD/MM/YYYY y YYYY/MM/DD.

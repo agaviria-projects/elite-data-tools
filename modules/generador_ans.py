@@ -28,23 +28,31 @@ def validar_proyecto():
 
     return {
 
-    "Datos de Entrada": (
-        proyecto_actual / "data_raw"
-    ).exists(),
+        "Datos de Entrada": (
+            proyecto_actual / "data_raw"
+        ).exists(),
 
-    "Datos Procesados": (
-        proyecto_actual / "data_clean"
-    ).exists(),
+        "Datos Procesados": (
+            proyecto_actual / "data_clean"
+        ).exists(),
 
-    "Motor de Cálculo": (
-        proyecto_actual / "calculos_ans.py"
-    ).exists(),
+        "Motor ANS Operativo": (
+            proyecto_actual / "calculos_ans.py"
+        ).exists(),
 
-    "Limpieza de Información": (
-        proyecto_actual / "limpieza_fenix.py"
-    ).exists(),
+        "Motor ANS Contractual": (
+            proyecto_actual / "calculos_ans_epm.py"
+        ).exists(),
 
-}
+        "Cruce Digitación": (
+            proyecto_actual / "cruce_digitacion_fenix.py"
+        ).exists(),
+
+        "Limpieza de Información": (
+            proyecto_actual / "limpieza_fenix.py"
+        ).exists(),
+
+    }
 
 # ==========================================================
 # ACTUALIZAR ESTADO
@@ -94,7 +102,7 @@ def cambiar_proyecto(var, frame):
 # EJECUTAR INFORME
 # ==========================================================
 
-def ejecutar_informe():
+def ejecutar_informe(tipo):
 
     txt_consola.delete("1.0", "end")
 
@@ -103,24 +111,49 @@ def ejecutar_informe():
         "🚀 Iniciando Generador Informe ANS...\n"
     )
 
-    pasos = [
+    txt_consola.insert(
+        "end",
+        f"📌 Tipo de cálculo: {'Operativo' if tipo == 'OPERATIVO' else 'Contractual EPM'}\n\n"
+    )
+    if tipo == "OPERATIVO":
 
-        (
-            "Limpieza de Información",
-            "limpieza_fenix.py"
-        ),
+        pasos = [
 
-        (
-            "Motor de Cálculo ANS",
-            "calculos_ans.py"
-        ),
+            (
+                "Limpieza de Información",
+                "limpieza_fenix.py"
+            ),
 
-        (
-            "Cruce Digitación Fénix",
-            "cruce_digitacion_fenix.py"
-        ),
+            (
+                "Motor de Cálculo ANS",
+                "calculos_ans.py"
+            ),
 
-    ]
+            (
+                "Cruce Digitación Fénix",
+                "cruce_digitacion_fenix.py"
+            ),
+        ]
+
+    else:
+
+        pasos = [
+
+            (
+                "Limpieza de Información",
+                "limpieza_fenix.py"
+            ),
+
+            (
+                "Motor de Cálculo ANS EPM",
+                "calculos_ans_epm.py"
+            ),
+
+            (
+                "Cruce Digitación Fénix",
+                "cruce_digitacion_fenix.py"
+            ),
+        ]
 
     def escribir(linea):
 
@@ -211,6 +244,8 @@ def crear_generador_ans(panel):
 
     ruta = ttk.StringVar(value=str(proyecto_actual))
 
+    tipo_calculo = ttk.StringVar(value="ANS Operativo")
+
     frm_proyecto = ttk.Labelframe(
 
         izquierda,
@@ -273,34 +308,51 @@ def crear_generador_ans(panel):
 
     actualizar_estado(frm_proyecto_estado)
 
-    # ------------------------------------------------------
-
+    
     acciones = ttk.Labelframe(
-
         vista,
-
         text="Proceso",
-
-        padding=20
-
+        padding=12
     )
 
     acciones.pack(fill="x", pady=(20, 15))
 
+    # ============================================
+    # PROCESO
+    # ============================================
+
+    fila = ttk.Frame(acciones)
+    fila.pack(fill="x")
+
+    ttk.Label(
+        fila,
+        text="Tipo de cálculo ANS:"
+    ).pack(side="left", padx=(0,10))
+
+    cmb_tipo = ttk.Combobox(
+        fila,
+        textvariable=tipo_calculo,
+        values=[
+            "ANS Operativo",
+            "ANS Contractual EPM"
+        ],
+        state="readonly",
+        width=22
+    )
+
+    cmb_tipo.pack(side="left")
+
     ttk.Button(
-
-        acciones,
-
+        fila,
         text="▶ Generar Informe ANS",
-
-        width=28,
-
+        width=25,
         bootstyle="success",
-
-        command=ejecutar_informe
-
-    ).pack(pady=10)
-
+        command=lambda: ejecutar_informe(
+            "OPERATIVO"
+            if tipo_calculo.get() == "ANS Operativo"
+            else "EPM"
+        )
+    ).pack(side="right")
     # ------------------------------------------------------
 
     consola = ttk.Labelframe(

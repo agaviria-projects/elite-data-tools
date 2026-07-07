@@ -35,7 +35,7 @@ def crear_header(app):
 
     ttk.Label(
         header,
-        text="Enterprise Automation Suite  |  Versión 2.0",
+        text="Enterprise Automation Suite  |  Versión 1.0",
         font=FUENTE_PEQUEÑA
     ).grid(
         row=0,
