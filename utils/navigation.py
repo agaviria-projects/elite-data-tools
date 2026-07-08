@@ -144,3 +144,18 @@ def mostrar_consolidador_excel(panel):
     limpiar_panel(panel)
 
     crear_consolidador_excel(panel)
+
+# ==========================================
+# ANALIZADOR COSTOS OPERATIVOS
+# ==========================================
+
+def mostrar_analizador_costos(panel):
+    """
+    Muestra el módulo Analizador de Costos Operativos.
+    """
+
+    from modules.analizador_costos import crear_analizador_costos
+
+    limpiar_panel(panel)
+
+    crear_analizador_costos(panel)
