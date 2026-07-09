@@ -23,7 +23,7 @@ def mostrar_sidebar(hojas):
 
         hojas_permitidas = [
 
-            "AÑO 2026",
+            "RODAMIENTOS",
 
             "VIATICOS",
 

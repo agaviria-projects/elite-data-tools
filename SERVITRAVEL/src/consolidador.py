@@ -1,6 +1,6 @@
 from config import (
     CARPETA_ENTRADA,
-    HOJA_ANIO,
+    HOJA_RODAMIENTOS,
     HOJA_VIATICOS,
     HOJA_PARQUEADEROS,
     HOJA_PEAJES
@@ -31,10 +31,10 @@ def consolidar_anio(libro):
 
     print("=" * 60)
     print("SERVITRAVEL")
-    print("CONSOLIDACIÓN AÑO 2026")
+    print("CONSOLIDACIÓN RODAMIENTOS")
     print("=" * 60)
 
-    hoja_destino = libro.sheets[HOJA_ANIO]
+    hoja_destino = libro.sheets[HOJA_RODAMIENTOS]
 
     archivos = sorted(
         archivo
@@ -120,7 +120,7 @@ def consolidar_anio(libro):
     # ------------------------------------------------------
 
     imprimir_resumen(
-        "AÑO 2026",
+        "RODAMIENTOS",
         resumen_zonas,
         total_registros
     )

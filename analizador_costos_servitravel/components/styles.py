@@ -42,12 +42,13 @@ CONTENEDOR
 /*==========================================================
 FUENTE
 ==========================================================*/
-
 html,
 body,
 [class*="css"]{
 
     font-family:"Segoe UI",sans-serif;
+
+    color:#1F2937;
 
 }
 
@@ -75,7 +76,9 @@ h3{
 
     font-size:24px !important;
 
-    font-weight:600 !important;
+    font-weight:700 !important;
+
+    color:#1E3A8A !important;
 
 }
 
@@ -226,6 +229,79 @@ padding-left:15px;
 padding-right:15px;
 
 }
+
+}
+/*=====================================================
+TABLAS DATAFRAME
+=====================================================*/
+
+[data-testid="stDataFrame"] table {
+
+    font-size: 15px !important;
+
+}
+
+[data-testid="stDataFrame"] th {
+
+    font-size: 14px !important;
+
+    font-weight: 700 !important;
+
+    color: #111827 !important;
+
+    background: #F3F4F6 !important;
+
+}
+
+[data-testid="stDataFrame"] td {
+
+    font-size: 14px !important;
+
+    font-weight: 500 !important;
+
+    color: #1F2937 !important;
+
+}
+
+[data-testid="stDataFrame"] tbody tr:hover {
+
+    background-color: #EEF5FF !important;
+
+}
+
+/*=====================================================
+TABS PRINCIPALES
+=====================================================*/
+
+/* Texto de las pestañas */
+
+button[data-baseweb="tab"]{
+
+    color:#1F2937 !important;
+
+    font-size:15px !important;
+
+    font-weight:600 !important;
+
+}
+
+/* Pestaña activa */
+
+button[data-baseweb="tab"][aria-selected="true"]{
+
+    color:#0F62FE !important;
+
+    font-weight:700 !important;
+
+    border-bottom:3px solid #0F62FE !important;
+
+}
+
+/* Hover */
+
+button[data-baseweb="tab"]:hover{
+
+    color:#2563EB !important;
 
 }
 

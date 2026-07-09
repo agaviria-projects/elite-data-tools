@@ -50,12 +50,11 @@ def _crear_anio_mes(df, columna_fecha):
 # ==========================================================
 # FILTROS
 # ==========================================================
-
-def mostrar_filtros(df):
+def mostrar_filtros(df, key_prefix="filtros"):
 
     if df is None or df.empty:
 
-        return pd.DataFrame()
+        return pd.DataFrame()  
 
     # ------------------------------------------------------
 
@@ -108,13 +107,10 @@ def mostrar_filtros(df):
         if meses:
 
             mes = c1.selectbox(
-
                 "Mes",
-
                 meses,
-
-                index=len(meses)-1
-
+                index=len(meses)-1,
+                key=f"{key_prefix}_mes"
             )
 
             df = df[
@@ -141,11 +137,9 @@ def mostrar_filtros(df):
         ]
 
         zona = c2.selectbox(
-
             "Zona",
-
-            zonas
-
+            zonas,
+            key=f"{key_prefix}_zona"
         )
 
         if zona != "Todas":
@@ -174,11 +168,9 @@ def mostrar_filtros(df):
         ]
 
         placa = c3.selectbox(
-
             "Placa",
-
-            placas
-
+            placas,
+            key=f"{key_prefix}_placa"
         )
 
         if placa != "Todas":

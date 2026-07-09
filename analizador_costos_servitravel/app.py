@@ -7,8 +7,9 @@ from components.header import mostrar_header
 from components.sidebar import mostrar_sidebar
 from components.filtros import mostrar_filtros
 from components.kpis import mostrar_kpis
-from components.resumen_ejecutivo import mostrar_resumen_ejecutivo
 from components.ranking_placas import mostrar_ranking_placas
+from components.indicadores_mensuales import mostrar_indicadores_mensuales
+from components.datos import mostrar_datos
 
 # Próximas fases
 # from components.comparativo import mostrar_comparativo
@@ -60,61 +61,106 @@ if resultado is None:
 df = resultado["df"]
 hoja = resultado["hoja"]
 
-# ==========================================================
-# FILTROS
-# ==========================================================
-
-df_filtrado = mostrar_filtros(df)
-
-if df_filtrado is None or df_filtrado.empty:
-
-    st.warning("No existen registros para los filtros seleccionados.")
-
-    st.stop()
 
 # ==========================================================
-# KPIs
+# NAVEGACIÓN
 # ==========================================================
 
-mostrar_kpis(df_filtrado)
+opcion = st.radio(
+    "",
+    [
+        "📂 Datos",
+        "🏠 Resumen Ejecutivo",
+        "📈 Indicadores Mensuales",
+        "🚗 Vehículos",
+        "💰 Gastos Operativos",
+        "🗺️ Zonas",
+        "📋 Detalle",
+    ],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+# ==========================================================
+# DATOS
+# ==========================================================
 
-st.divider()
+if opcion == "📂 Datos":
 
-
-mostrar_ranking_placas(df_filtrado)
-
-st.divider()
+     mostrar_datos(hojas)
 
 # ==========================================================
 # RESUMEN EJECUTIVO
 # ==========================================================
+if opcion == "🏠 Resumen Ejecutivo":
 
-mostrar_resumen_ejecutivo(df_filtrado)
+    df_filtrado = mostrar_filtros(
+        df,
+        key_prefix="resumen"
+    )
 
-st.divider()
+    if df_filtrado.empty:
+
+        st.warning("No existen registros para los filtros seleccionados.")
+
+    else:
+
+        mostrar_kpis(df_filtrado)
+
+        st.divider()
+
+        mostrar_ranking_placas(df_filtrado)
 
 # ==========================================================
-# PRÓXIMAS FASES
+# INDICADORES MENSUALES
 # ==========================================================
 
-# mostrar_comparativo(df_filtrado)
+if opcion == "📈 Indicadores Mensuales":
 
-# st.divider()
+    df_filtrado = mostrar_filtros(
+        df,
+        key_prefix="indicadores"
+    )
 
-# mostrar_ranking_zonas(df_filtrado)
+    if df_filtrado.empty:
 
-# st.divider()
+        st.warning("No existen registros para los filtros seleccionados.")
 
-# mostrar_ranking_conceptos(df_filtrado)
+    else:
 
-# st.divider()
+        mostrar_indicadores_mensuales(
+            df,
+            df_filtrado
+        )
+   
 
-# mostrar_graficos(df_filtrado)
+# ==========================================================
+# VEHÍCULOS
+# ==========================================================
 
-# st.divider()
+if opcion == "🚗 Vehículos":
 
-# mostrar_hallazgos(df_filtrado)
+    st.info("Módulo en construcción.")
 
-# st.divider()
+# ==========================================================
+# GASTOS OPERATIVOS
+# ==========================================================
 
-# mostrar_detalle(df_filtrado)
+if opcion == "💰 Gastos Operativos":
+
+    st.info("Módulo en construcción.")
+
+# ==========================================================
+# ZONAS
+# ==========================================================
+
+if opcion == "🗺️ Zonas":
+
+    st.info("Módulo en construcción.")
+
+# ==========================================================
+# DETALLE
+# ==========================================================
+
+if opcion == "📋 Detalle":
+
+    st.info("Módulo en construcción.")
