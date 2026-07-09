@@ -10,27 +10,35 @@ def mostrar_header():
 
     fecha = datetime.now().strftime("%d/%m/%Y")
 
-    contenedor = st.container(border=True)
+    st.markdown(
+    f"""
+    <div class="elite-banner">
 
-    with contenedor:
+    <div class="elite-left">
 
-        col1, col2 = st.columns([8, 2])
+    <div class="elite-title">
+    📊 Analizador de Costos Operativos
+    </div>
 
-        with col1:
+    <div class="elite-subtitle">
+    Sistema de Análisis Operativo · ELITE
+    </div>
 
-            st.title("📊 Analizador de Costos Operativos")
+    </div>
 
-            st.caption("Dashboard Ejecutivo · Servitravel")
+    <div class="elite-right">
 
-        with col2:
+    <div class="elite-date-title">
+    📅 Fecha
+    </div>
 
-            st.write("")
-            st.write("")
+    <div class="elite-date">
+    {fecha}
+    </div>
 
-            st.markdown(
-                f"""
-**📅 Fecha**
+    </div>
 
-{fecha}
-"""
-            )
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )

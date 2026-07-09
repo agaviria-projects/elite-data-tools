@@ -304,7 +304,78 @@ button[data-baseweb="tab"]:hover{
     color:#2563EB !important;
 
 }
+/* ===================================================== */
+/* HEADER ELITE */
+/* ===================================================== */
 
+.elite-banner{
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    background:linear-gradient(
+        135deg,
+        #0b5f2a 0%,
+        #14833d 55%,
+        #1fa34a 100%
+    );
+
+    border-radius:18px;
+
+    padding:28px 34px;
+
+    margin-bottom:18px;
+
+    color:white;
+
+    box-shadow:0 8px 22px rgba(0,0,0,.18);
+}
+
+.elite-left{
+
+    display:flex;
+    flex-direction:column;
+}
+
+.elite-title{
+
+    font-size:34px;
+
+    font-weight:700;
+
+    line-height:1.1;
+}
+
+.elite-subtitle{
+
+    margin-top:8px;
+
+    font-size:16px;
+
+    color:rgba(255,255,255,.90);
+}
+
+.elite-right{
+
+    text-align:right;
+}
+
+.elite-date-title{
+
+    font-size:15px;
+
+    color:rgba(255,255,255,.85);
+}
+
+.elite-date{
+
+    margin-top:6px;
+
+    font-size:24px;
+
+    font-weight:700;
+}
 </style>
         """,
         unsafe_allow_html=True

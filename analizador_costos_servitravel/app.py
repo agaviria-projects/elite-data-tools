@@ -25,7 +25,7 @@ from components.datos import mostrar_datos
 # ==========================================================
 
 st.set_page_config(
-    page_title="Analizador de Costos Operativos",
+    page_title="Analizador de Costos Operativos Servitravel",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -70,7 +70,7 @@ opcion = st.radio(
     "",
     [
         "📂 Datos",
-        "🏠 Resumen Ejecutivo",
+        "📊 Resumen del período",
         "📈 Indicadores Mensuales",
         "🚗 Vehículos",
         "💰 Gastos Operativos",
@@ -91,7 +91,7 @@ if opcion == "📂 Datos":
 # ==========================================================
 # RESUMEN EJECUTIVO
 # ==========================================================
-if opcion == "🏠 Resumen Ejecutivo":
+if opcion == "📊 Resumen del período":
 
     df_filtrado = mostrar_filtros(
         df,

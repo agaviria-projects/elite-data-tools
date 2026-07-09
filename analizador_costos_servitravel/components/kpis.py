@@ -163,7 +163,7 @@ def mostrar_kpis(df: pd.DataFrame):
     # DASHBOARD
     # ------------------------------------------------------
 
-    st.subheader("📌 Cierre del Mes")
+    st.subheader("📊 Resumen del período")
 
     c1, c2, c3 = st.columns(3)
 
