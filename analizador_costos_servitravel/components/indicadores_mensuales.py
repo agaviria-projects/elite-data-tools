@@ -161,37 +161,93 @@ def mostrar_indicadores_mensuales(
     # HALLAZGOS
     # ======================================================
 
-    st.subheader("📝 Hallazgos del Mes")
+    nombre_mes = {
+        1: "enero",
+        2: "febrero",
+        3: "marzo",
+        4: "abril",
+        5: "mayo",
+        6: "junio",
+        7: "julio",
+        8: "agosto",
+        9: "septiembre",
+        10: "octubre",
+        11: "noviembre",
+        12: "diciembre"
+    }
+
+    mes_ref = nombre_mes[mes_anterior.month]
+
+    st.subheader("📋 Principales hallazgos del período")
+
+    # ======================================================
+    # VEHÍCULOS
+    # ======================================================
 
     if diff_veh > 0:
+
         st.success(
-            f"Se utilizaron **{diff_veh}** vehículos más que el mes anterior."
+            f"🚗 Se utilizaron **{diff_veh} vehículos más** respecto a **{mes_ref}** "
+            f"(**+{porc_veh:.1f}%**)."
         )
+
     elif diff_veh < 0:
+
         st.info(
-            f"Se utilizaron **{abs(diff_veh)}** vehículos menos que el mes anterior."
+            f"🚗 Se utilizaron **{abs(diff_veh)} vehículo(s) menos** respecto a **{mes_ref}** "
+            f"(**{porc_veh:.1f}%**)."
         )
+
     else:
-        st.write("• La cantidad de vehículos no presentó variación.")
+
+        st.info(
+            f"🚗 La cantidad de vehículos se mantuvo igual respecto a **{mes_ref}**."
+        )
+
+    # ======================================================
+    # HORAS EXTRA
+    # ======================================================
 
     if diff_horas > 0:
+
         st.warning(
-            f"Las horas extras aumentaron **{porc_horas:.1f}%**."
+            f"⏱️ Las horas extra **aumentaron {diff_horas:,.1f} horas** respecto a "
+            f"**{mes_ref}** (**+{porc_horas:.1f}%**)."
         )
+
     elif diff_horas < 0:
+
         st.success(
-            f"Las horas extras disminuyeron **{abs(porc_horas):.1f}%**."
+            f"⏱️ Las horas extra **disminuyeron {abs(diff_horas):,.1f} horas** respecto a "
+            f"**{mes_ref}** (**{porc_horas:.1f}%**)."
         )
+
     else:
-        st.write("• Las horas extras no presentaron variación.")
+
+        st.info(
+            f"⏱️ Las horas extra no presentaron variación respecto a **{mes_ref}**."
+        )
+
+    # ======================================================
+    # COSTO HORAS EXTRA
+    # ======================================================
 
     if diff_valor > 0:
+
         st.error(
-            f"El costo de horas extras aumentó **{porc_valor:.1f}%**."
+            f"💰 El costo de horas extra **aumentó $ {diff_valor:,.0f}** respecto a "
+            f"**{mes_ref}** (**+{porc_valor:.1f}%**)."
         )
+
     elif diff_valor < 0:
+
         st.success(
-            f"El costo de horas extras disminuyó **{abs(porc_valor):.1f}%**."
+            f"💰 El costo de horas extra **disminuyó $ {abs(diff_valor):,.0f}** respecto a "
+            f"**{mes_ref}** (**{porc_valor:.1f}%**)."
         )
+
     else:
-        st.write("• El costo de horas extras no presentó variación.")
+
+        st.info(
+            f"💰 El costo de horas extra no presentó variación respecto a **{mes_ref}**."
+        )
