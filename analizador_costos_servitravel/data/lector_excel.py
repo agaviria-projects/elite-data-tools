@@ -18,7 +18,7 @@ ARCHIVO = BASE / "SERVITRAVEL" / "salida" / "INFORME_LIQUIDACION.xlsb"
 
 CONFIG_HOJAS = {
 
-    "AÑO 2026": {
+    "RODAMIENTOS": {
         "header": 0,
         "usecols": None
     },
@@ -189,6 +189,58 @@ def convertir_horas(df):
     return df
 
 # ==========================================
+# CONVERTIR VALORES MONETARIOS
+# ==========================================
+
+def convertir_monedas(df):
+
+    columnas_monetarias = [
+
+        "VALOR HORA EXTRA",
+
+        "PEAJES",
+
+        "VALOR KM EXTRA",
+
+        "VALOR ÉLITE"
+
+    ]
+
+    for columna in columnas_monetarias:
+
+        if columna in df.columns:
+
+            try:
+
+                df[columna] = (
+
+                    df[columna]
+
+                    .astype(str)
+
+                    .str.replace("$", "", regex=False)
+
+                    .str.replace(",", "", regex=False)
+
+                    .str.strip()
+
+                )
+
+                df[columna] = pd.to_numeric(
+
+                    df[columna],
+
+                    errors="coerce"
+
+                ).fillna(0)
+
+            except Exception:
+
+                pass
+
+    return df
+
+# ==========================================
 # LEER UNA HOJA
 # ==========================================
 
@@ -226,9 +278,15 @@ def leer_hoja(nombre_hoja):
 
     )
 
+    df.columns = df.columns.str.strip()
+
     df = convertir_fechas(df)
 
     df = convertir_horas(df)
+
+    df = convertir_monedas(df)
+
+    df = df.dropna(how="all")
 
     return df
 

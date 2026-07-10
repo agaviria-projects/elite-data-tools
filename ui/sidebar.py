@@ -17,7 +17,7 @@ MENU = [
 
     ('consolidador','📚','Consolidador Excel'),
 
-    ('costos','📈','Analizador Costos'),
+    ('costos','💲','Analizador Costos'),
 
 ]
 
