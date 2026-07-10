@@ -44,10 +44,6 @@ def validar_proyecto():
             proyecto_actual / "calculos_ans_epm.py"
         ).exists(),
 
-        "Cruce Digitación": (
-            proyecto_actual / "cruce_digitacion_fenix.py"
-        ).exists(),
-
         "Limpieza de Información": (
             proyecto_actual / "limpieza_fenix.py"
         ).exists(),
@@ -128,11 +124,6 @@ def ejecutar_informe(tipo):
                 "Motor de Cálculo ANS",
                 "calculos_ans.py"
             ),
-
-            (
-                "Cruce Digitación Fénix",
-                "cruce_digitacion_fenix.py"
-            ),
         ]
 
     else:
@@ -149,10 +140,6 @@ def ejecutar_informe(tipo):
                 "calculos_ans_epm.py"
             ),
 
-            (
-                "Cruce Digitación Fénix",
-                "cruce_digitacion_fenix.py"
-            ),
         ]
 
     def escribir(linea):
