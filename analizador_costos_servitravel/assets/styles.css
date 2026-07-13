@@ -80,7 +80,7 @@ CONTENEDOR
 
 .block-container{
 
-    padding-top:20px;
+    padding-top:0.5rem !important;
 
     padding-left:22px;
 
@@ -90,7 +90,39 @@ CONTENEDOR
 
 }
 
+/*==========================================================
+HEADER STREAMLIT
+==========================================================*/
 
+/* Elimina el espacio superior reservado por Streamlit */
+
+header[data-testid="stHeader"]{
+
+    background:transparent !important;
+
+    height:0 !important;
+
+} */
+
+/* div[data-testid="stToolbar"]{
+
+    height:0 !important;
+
+    visibility:hidden;
+
+} */
+/* 
+div[data-testid="stDecoration"]{
+
+    display:none !important;
+
+} */
+
+.block-container{
+
+    padding-top:0rem !important;
+
+}
 
 /*==========================================================
 SIDEBAR
@@ -767,4 +799,94 @@ SIN OCULTAR EL BOTÓN << DEL SIDEBAR
 /* Oculta el separador si existe */
 [data-testid="stSidebarNavSeparator"]{
     display:none !important;
+}
+
+.banner-logo{
+
+    height:56px;
+
+    margin-right:18px;
+
+}
+
+
+/*==========================================================
+BANNER ELITE
+==========================================================*/
+
+.elite-banner{
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    background:
+        radial-gradient(
+            600px 250px
+            at 120px 40px,
+            rgba(255,255,255,.08),
+            transparent
+        ),
+        linear-gradient(
+            90deg,
+            #166534,
+            #15803D,
+            #14532D
+        );
+
+    border-radius:28px;
+
+    padding:26px 34px;
+
+    min-height:140px;
+
+    box-shadow:
+        0 20px 45px rgba(0,0,0,.22);
+
+    margin-bottom:30px;
+
+}
+
+.elite-banner-title{
+
+    color:white;
+
+    font-size:34px;
+
+    font-weight:900;
+
+    letter-spacing:.3px;
+
+}
+
+.elite-banner-subtitle{
+
+    margin-top:8px;
+
+    color:#BBF7D0;
+
+    font-size:15px;
+
+    font-weight:500;
+
+}
+
+.elite-banner-status{
+
+    background:rgba(255,255,255,.12);
+
+    border:1px solid rgba(255,255,255,.20);
+
+    border-radius:999px;
+
+    padding:10px 18px;
+
+    color:white;
+
+    font-size:13px;
+
+    font-weight:700;
+
+    backdrop-filter:blur(8px);
+
 }

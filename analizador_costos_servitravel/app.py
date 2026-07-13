@@ -3,7 +3,7 @@ import streamlit as st
 from data.lector_excel import leer_todas
 
 from components.styles import cargar_estilos
-from components.header import mostrar_header
+from components.banner import mostrar_banner
 from components.sidebar import mostrar_sidebar
 from components.filtros import mostrar_filtros
 from components.kpis import mostrar_kpis
@@ -41,7 +41,7 @@ cargar_estilos()
 # HEADER
 # ==========================================================
 
-# mostrar_header()
+mostrar_banner()
 
 # ==========================================================
 # CARGAR INFORMACIÓN (UNA SOLA VEZ)
