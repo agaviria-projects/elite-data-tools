@@ -9,21 +9,36 @@ import pandas as pd
 def mostrar_datos(hojas: dict):
 
     st.subheader("📂 Explorador de Datos")
+    
+    opcion = st.radio(
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        [
-            "🚗 Rodamientos",
-            "🍽️ Viáticos",
-            "🅿️ Parqueaderos",
-            "🛣️ Peajes"
-        ]
-    )
+    "",
+
+    [
+
+        "🚗 Rodamientos",
+
+        "🍽️ Viáticos",
+
+        "🅿️ Parqueaderos",
+
+        "🛣️ Peajes"
+
+    ],
+
+    horizontal=True,
+
+    label_visibility="collapsed",
+
+    key="menu_explorador"
+
+)
 
     # ======================================================
     # RODAMIENTOS
     # ======================================================
 
-    with tab1:
+    if opcion == "🚗 Rodamientos":
 
         if "RODAMIENTOS" not in hojas:
 
@@ -38,7 +53,7 @@ def mostrar_datos(hojas: dict):
     # ======================================================
     # VIÁTICOS
     # ======================================================
-    with tab2:
+    if opcion == "🍽️ Viáticos":
 
         if "VIATICOS" not in hojas:
 
@@ -55,7 +70,7 @@ def mostrar_datos(hojas: dict):
     # PARQUEADEROS
     # ======================================================
 
-    with tab3:
+    if opcion == "🅿️ Parqueaderos":
 
         if "PARQUEADEROS" not in hojas:
 
@@ -71,7 +86,7 @@ def mostrar_datos(hojas: dict):
     # PEAJES
     # ======================================================
 
-    with tab4:
+    if opcion == "🛣️ Peajes":
 
         if "PEAJES" not in hojas:
 
