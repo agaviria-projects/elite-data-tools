@@ -1008,3 +1008,45 @@ div[role="radiogroup"] input:checked + div{
     font-weight:700;
 
 }
+
+/*==========================================================
+AGGRID - ENCABEZADO CORPORATIVO
+==========================================================*/
+
+.ag-theme-streamlit .ag-header {
+
+    background:#166534 !important;
+
+    border-bottom:0 !important;
+
+}
+
+.ag-theme-streamlit .ag-header-cell {
+
+    background:#166534 !important;
+
+    border-right:1px solid rgba(255,255,255,.10) !important;
+
+}
+
+.ag-theme-streamlit .ag-header-cell-label {
+
+    color:white !important;
+
+    font-size:13px !important;
+
+    font-weight:700 !important;
+
+}
+
+.ag-theme-streamlit .ag-header-cell-text {
+
+    color:white !important;
+
+}
+
+.ag-theme-streamlit .ag-icon {
+
+    color:white !important;
+
+}

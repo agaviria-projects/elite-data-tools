@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+from components.tablas_datos import mostrar_tabla
 
 # ==========================================================
 # MÓDULO DATOS
@@ -267,9 +267,12 @@ def mostrar_rodamientos(df: pd.DataFrame):
 
     if "FECHA" in df_tabla.columns:
 
-        df_tabla["FECHA"] = pd.to_datetime(
-            df_tabla["FECHA"],
-            errors="coerce"
+        df_tabla["FECHA"] = (
+            pd.to_datetime(
+                df_tabla["FECHA"],
+                errors="coerce"
+            )
+            .dt.strftime("%d/%m/%Y")
         )
 
     # ======================================================
@@ -350,77 +353,14 @@ def mostrar_rodamientos(df: pd.DataFrame):
             )
 
     # ======================================================
-    # CONFIGURACIÓN DE COLUMNAS
-    # ======================================================
-
-    column_config = {}
-
-    if "FECHA" in df_tabla.columns:
-
-        column_config["FECHA"] = st.column_config.DateColumn(
-            "Fecha",
-            format="DD/MM/YYYY"
-        )
-
-    if "INGRESO" in df_tabla.columns:
-
-        column_config["INGRESO"] = st.column_config.TextColumn(
-            "Ingreso"
-        )
-
-    if "SALIDA" in df_tabla.columns:
-
-        column_config["SALIDA"] = st.column_config.TextColumn(
-            "Salida"
-        )
-
-    if "HORAS EXTRA" in df_tabla.columns:
-
-        column_config["HORAS EXTRA"] = (
-            st.column_config.NumberColumn(
-                "Horas Extra",
-                format="%.1f"
-            )
-        )
-
-    if "VALOR HORA EXTRA" in df_tabla.columns:
-
-        column_config["VALOR HORA EXTRA"] = (
-            st.column_config.NumberColumn(
-                "Valor Hora Extra",
-                format="$ %,.0f"
-            )
-        )
-
-    if "VALOR ÉLITE" in df_tabla.columns:
-
-        column_config["VALOR ÉLITE"] = (
-            st.column_config.NumberColumn(
-                "Valor Élite",
-                format="$ %,.0f"
-            )
-        )
-
-    if "PEAJES" in df_tabla.columns:
-
-        column_config["PEAJES"] = (
-            st.column_config.NumberColumn(
-                "Peajes",
-                format="$ %,.0f"
-            )
-        )
-
-    # ======================================================
     # TABLA
     # ======================================================
 
-    st.dataframe(
+    mostrar_tabla(
         df_tabla,
-        use_container_width=True,
-        hide_index=True,
-        height=620,
-        column_config=column_config
-    )    
+        height=620
+    )
+
 # ==========================================================
 # VIÁTICOS
 # ==========================================================
@@ -573,12 +513,13 @@ def mostrar_viaticos(df: pd.DataFrame):
     # FORMATO
     # ======================================================
 
-    if "FECHA VIATICOS" in df_tabla.columns:
-
-        df_tabla["FECHA VIATICOS"] = pd.to_datetime(
+    df_tabla["FECHA VIATICOS"] = (
+        pd.to_datetime(
             df_tabla["FECHA VIATICOS"],
             errors="coerce"
         )
+        .dt.strftime("%d/%m/%Y")
+    )
 
     if "TOTAL VIATICOS" in df_tabla.columns:
 
@@ -590,29 +531,10 @@ def mostrar_viaticos(df: pd.DataFrame):
             .fillna(0)
         )
 
-    # ======================================================
-    # TABLA
-    # ======================================================
-
-    st.dataframe(
+    mostrar_tabla(
         df_tabla,
-        use_container_width=True,
-        hide_index=True,
-        height=620,
-        column_config={
-
-            "FECHA VIATICOS": st.column_config.DateColumn(
-                "Fecha Viáticos",
-                format="DD/MM/YYYY"
-            ),
-
-            "TOTAL VIATICOS": st.column_config.NumberColumn(
-                "Total Viáticos",
-                format="$ %,.0f"
-            )
-
-        }
-    )    
+        height=620
+    )
 # ==========================================================
 # PARQUEADEROS
 # ==========================================================
@@ -778,9 +700,12 @@ def mostrar_parqueaderos(df: pd.DataFrame):
 
     if "FECHA" in df_tabla.columns:
 
-        df_tabla["FECHA"] = pd.to_datetime(
-            df_tabla["FECHA"],
-            errors="coerce"
+        df_tabla["FECHA"] = (
+            pd.to_datetime(
+                df_tabla["FECHA"],
+                errors="coerce"
+            )
+            .dt.strftime("%d/%m/%Y")
         )
 
     if "CANTIDAD" in df_tabla.columns:
@@ -807,30 +732,10 @@ def mostrar_parqueaderos(df: pd.DataFrame):
     # TABLA
     # ======================================================
 
-    st.dataframe(
+    mostrar_tabla(
         df_tabla,
-        use_container_width=True,
-        hide_index=True,
         height=620,
-        column_config={
-
-            "FECHA": st.column_config.DateColumn(
-                "Fecha",
-                format="DD/MM/YYYY"
-            ),
-
-            "CANTIDAD": st.column_config.NumberColumn(
-                "Cantidad",
-                format="%.0f"
-            ),
-
-            "TOTAL PARQUEADEROS": st.column_config.NumberColumn(
-                "Total Parqueaderos",
-                format="$ %,.0f"
-            )
-
-        }
-    )    
+    )   
 # ==========================================================
 # PEAJES
 # ==========================================================
@@ -1002,9 +907,12 @@ def mostrar_peajes(df: pd.DataFrame):
 
     if "FECHA EN LA QUE SE CAUSA EL PEAJE" in df_tabla.columns:
 
-        df_tabla["FECHA EN LA QUE SE CAUSA EL PEAJE"] = pd.to_datetime(
-            df_tabla["FECHA EN LA QUE SE CAUSA EL PEAJE"],
-            errors="coerce"
+        df_tabla["FECHA EN LA QUE SE CAUSA EL PEAJE"] = (
+            pd.to_datetime(
+                df_tabla["FECHA EN LA QUE SE CAUSA EL PEAJE"],
+                errors="coerce"
+            )
+            .dt.strftime("%d/%m/%Y")
         )
 
     for columna in [
@@ -1031,32 +939,7 @@ def mostrar_peajes(df: pd.DataFrame):
     # TABLA
     # ======================================================
 
-    st.dataframe(
+    mostrar_tabla(
         df_tabla,
-        use_container_width=True,
-        hide_index=True,
         height=620,
-        column_config={
-
-            "FECHA EN LA QUE SE CAUSA EL PEAJE": st.column_config.DateColumn(
-                "Fecha Peaje",
-                format="DD/MM/YYYY"
-            ),
-
-            "CANTIDAD PEAJES": st.column_config.NumberColumn(
-                "Cantidad Peajes",
-                format="%.0f"
-            ),
-
-            "VALOR PEAJE": st.column_config.NumberColumn(
-                "Valor Peaje",
-                format="$ %,.0f"
-            ),
-
-            "TOTAL PEAJES": st.column_config.NumberColumn(
-                "Total Peajes",
-                format="$ %,.0f"
-            )
-
-        }
     )    

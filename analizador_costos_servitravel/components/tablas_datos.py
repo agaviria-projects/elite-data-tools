@@ -6,6 +6,7 @@ from st_aggrid import (
 )
 
 import pandas as pd
+import streamlit as st
 
 
 # ==========================================================
@@ -19,6 +20,21 @@ def mostrar_tabla(
 
     if df is None or df.empty:
         return
+
+    # ======================================================
+    # COPIA DEL DATAFRAME
+    # ======================================================
+
+    df = df.copy()
+
+    # ======================================================
+    # GRID
+    # ======================================================
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    # ======================================================
+    # GRID
+    # ======================================================
 
     gb = GridOptionsBuilder.from_dataframe(df)
 
@@ -52,8 +68,8 @@ def mostrar_tabla(
         pagination=True,
         paginationPageSize=20,
 
-        rowHeight=40,
-        headerHeight=46,
+        rowHeight=42,
+        headerHeight=50,
 
         suppressRowClickSelection=True,
         enableCellTextSelection=True,
@@ -70,11 +86,11 @@ def mostrar_tabla(
 
     header_style = JsCode("""
     function(params){
-        params.eGridHeader.style.background='#166534';
-        params.eGridHeader.style.color='white';
+        params.eGridHeader.style.background='#EEF2F7';
+        params.eGridHeader.style.color='#1F2937';
         params.eGridHeader.style.fontWeight='700';
         params.eGridHeader.style.fontSize='13px';
-        params.eGridHeader.style.borderBottom='2px solid #14532D';
+        params.eGridHeader.style.borderBottom='1px solid #D1D5DB';
     }
     """)
 
@@ -97,7 +113,7 @@ def mostrar_tabla(
 
         return{
 
-            background:'#F4F8FD',
+            background:'#F8FAFC',
             borderBottom:'1px solid #E5E7EB'
 
         }
@@ -113,22 +129,22 @@ def mostrar_tabla(
     css = {
 
         ".ag-root-wrapper": {
-            "border": "1px solid #D6DEE8",
-            "border-radius": "10px",
+            "border": "1px solid #E5E7EB",
+            "border-radius": "12px",
             "overflow": "hidden",
-            "box-shadow": "0 3px 12px rgba(0,0,0,0.08)",
+            "box-shadow": "0 6px 18px rgba(15,23,42,.08)",
         },
 
         ".ag-header": {
-            "background-color": "#166534 !important",
-            "border-bottom": "2px solid #14532D",
+            "background-color": "#EEF2F7 !important",
+            "border-bottom": "1px solid #D1D5DB",
         },
 
         ".ag-header-cell": {
-            "color": "white !important",
+            "color": "#1F2937 !important",
             "font-weight": "700 !important",
             "font-size": "13px !important",
-            "border-right": "1px solid rgba(255,255,255,0.10)",
+            "border-right": "1px solid #E5E7EB",
         },
 
         ".ag-header-cell-label": {

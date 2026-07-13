@@ -47,49 +47,17 @@ def mostrar_sidebar(hojas):
         st.divider()
 
         # ==================================================
-        # HOJAS DISPONIBLES
+        # ARCHIVO FUENTE
         # ==================================================
 
-        hojas_permitidas = [
+        st.markdown("**📄 Archivo fuente**")
 
-            "RODAMIENTOS",
+        st.info(
+            """
+**INFORME_LIQUIDACION.xlsb**
 
-            "VIATICOS",
-
-            "PARQUEADEROS",
-
-            "PEAJES",
-
-        ]
-
-        hojas_disponibles = [
-
-            hoja
-
-            for hoja in hojas.keys()
-
-            if hoja.strip().upper() in hojas_permitidas
-
-        ]
-
-        if not hojas_disponibles:
-
-            st.error("No se encontraron hojas válidas.")
-
-            return None
-
-        # ==================================================
-        # FUENTE DE INFORMACIÓN
-        # ==================================================
-
-        hoja = st.selectbox(
-
-            "📂 Fuente de información",
-
-            hojas_disponibles,
-
-            index=0,
-
+🟢 Conectado
+"""
         )
 
         # ==================================================
@@ -115,16 +83,12 @@ def mostrar_sidebar(hojas):
         st.caption("Versión 1.0")
 
     # ======================================================
-    # DATAFRAME
+    # COMPATIBILIDAD
     # ======================================================
 
+    hoja = "RODAMIENTOS"
+
     df = hojas.get(hoja)
-
-    if df is None or df.empty:
-
-        st.warning("La hoja seleccionada no contiene información.")
-
-        return None
 
     return {
 
