@@ -890,3 +890,25 @@ BANNER ELITE
     backdrop-filter:blur(8px);
 
 }
+/* ==========================================
+   OCULTAR SOLO DEPLOY
+========================================== */
+
+/* [data-testid="stToolbar"] a[href*="share"]{
+    display:none !important;
+}
+
+[data-testid="stToolbar"] button[aria-label*="Deploy"]{
+    display:none !important;
+}
+
+[data-testid="stToolbar"] button[title="Deploy"]{
+    display:none !important;
+} */
+
+
+
+/* 🔥 OCULTAR BOTÓN DEPLOY */
+button[kind="header"] {
+    display: none !important;
+}       
