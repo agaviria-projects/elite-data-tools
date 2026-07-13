@@ -2,7 +2,7 @@ import streamlit as st
 
 from data.lector_excel import leer_todas
 
-from components.styles import aplicar_estilos
+from components.styles import cargar_estilos
 from components.header import mostrar_header
 from components.sidebar import mostrar_sidebar
 from components.filtros import mostrar_filtros
@@ -35,13 +35,13 @@ st.set_page_config(
 # ESTILOS
 # ==========================================================
 
-aplicar_estilos()
+cargar_estilos()
 
 # ==========================================================
 # HEADER
 # ==========================================================
 
-mostrar_header()
+# mostrar_header()
 
 # ==========================================================
 # CARGAR INFORMACIÓN (UNA SOLA VEZ)

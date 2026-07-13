@@ -1,0 +1,770 @@
+/* ==========================================================
+   ELITE DESIGN SYSTEM V3
+   Analizador de Costos Operativos
+==========================================================*/
+
+
+/*==========================================================
+FUENTE
+==========================================================*/
+
+html,
+body,
+[class*="css"]{
+
+    font-family:
+        "Segoe UI Variable",
+        "Segoe UI",
+        "Inter",
+        "Roboto",
+        sans-serif !important;
+
+}
+
+
+/*==========================================================
+VARIABLES
+==========================================================*/
+
+:root{
+
+    --elite-primary:#198754;
+
+    --elite-primary-dark:#146C43;
+
+    --elite-primary-light:#28A745;
+
+    --elite-background:#F3F5F7;
+
+    --elite-card:#FFFFFF;
+
+    --elite-border:#DDE5EC;
+
+    --elite-text:#1F2937;
+
+    --elite-text-light:#6B7280;
+
+    --elite-radius:22px;
+
+}
+
+
+/*==========================================================
+STREAMLIT
+==========================================================*/
+#MainMenu{
+    visibility:hidden;
+}
+
+
+
+footer{
+    visibility:hidden;
+}
+
+
+/*==========================================================
+APP
+==========================================================*/
+
+.stApp{
+
+    background:var(--elite-background);
+
+}
+
+
+/*==========================================================
+CONTENEDOR
+==========================================================*/
+
+.block-container{
+
+    padding-top:20px;
+
+    padding-left:22px;
+
+    padding-right:22px;
+
+    padding-bottom:35px;
+
+}
+
+
+
+/*==========================================================
+SIDEBAR
+==========================================================*/
+
+section[data-testid="stSidebar"]{
+
+    background:#BCC5CF;
+
+    border-right:4px solid #16A34A;
+
+}
+
+/*==========================================================
+LOGO
+==========================================================*/
+
+section[data-testid="stSidebar"] img{
+
+    display:block;
+
+    margin:auto;
+
+    padding-bottom:18px;
+
+}
+
+
+/*==========================================================
+SCROLL
+==========================================================*/
+
+::-webkit-scrollbar{
+
+    width:10px;
+
+}
+
+::-webkit-scrollbar-thumb{
+
+    background:#C9D2DB;
+
+    border-radius:50px;
+
+}
+
+
+/*==========================================================
+TEXTOS SIDEBAR
+==========================================================*/
+
+.sidebar-section,
+.section-title{
+
+    color:#111827;
+
+    font-weight:800;
+
+}
+
+
+/*==========================================================
+LABELS
+==========================================================*/
+
+label,
+label p{
+
+    color:#111827;
+
+    font-size:15px;
+
+    font-weight:700;
+
+}
+
+
+/*==========================================================
+INPUTS
+==========================================================*/
+
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stTextArea textarea{
+
+    border-radius:14px;
+
+    border:1px solid var(--elite-border);
+
+    background:white;
+
+    font-size:15px;
+
+    color:#111827;
+
+    font-weight:600;
+
+}
+
+
+/*==========================================================
+SELECTBOX
+==========================================================*/
+
+.stSelectbox div[data-baseweb="select"]{
+
+    border-radius:14px;
+
+    border:1px solid var(--elite-border);
+
+}
+
+
+/*==========================================================
+TÍTULOS
+==========================================================*/
+
+h1,
+h2,
+h3,
+h4{
+
+    color:#065F46;
+
+    font-weight:900;
+
+}
+
+
+/*==========================================================
+BANNER
+==========================================================*/
+
+.banner{
+
+    background:
+
+        radial-gradient(
+
+            600px 250px
+
+            at
+
+            100px 40px,
+
+            rgba(255,255,255,.08),
+
+            transparent
+
+        ),
+
+        linear-gradient(
+
+            90deg,
+
+            #166534,
+
+            #15803D,
+
+            #14532D
+
+        );
+
+    border-radius:28px;
+
+    padding:26px 34px;
+
+    min-height:140px;
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    box-shadow:
+
+        0 18px 45px rgba(0,0,0,.22);
+
+    margin-bottom:30px;
+
+}
+
+
+/*==========================================================
+BANNER IZQUIERDA
+==========================================================*/
+
+.banner-left{
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:6px;
+
+}
+
+
+/*==========================================================
+TÍTULO
+==========================================================*/
+
+.banner-title{
+
+    display:flex;
+
+    align-items:center;
+
+    color:white;
+
+    font-size:34px;
+
+    font-weight:900;
+
+    letter-spacing:.3px;
+
+}
+
+
+/*==========================================================
+SUBTÍTULO
+==========================================================*/
+
+.banner-sub{
+
+    color:#BBF7D0;
+
+    font-size:15px;
+
+    font-weight:500;
+
+}
+
+
+/*==========================================================
+BADGE
+==========================================================*/
+
+.banner-badge{
+
+    background:
+
+        rgba(
+
+            255,
+
+            255,
+
+            255,
+
+            .12
+
+        );
+
+    border-radius:999px;
+
+    padding:10px 18px;
+
+    border:
+
+        1px solid
+
+        rgba(
+
+            255,
+
+            255,
+
+            255,
+
+            .20
+
+        );
+
+    color:white;
+
+    font-size:13px;
+
+    font-weight:700;
+
+    backdrop-filter:blur(8px);
+
+}
+
+/* ==========================================================
+   BOTONES CORPORATIVOS
+========================================================== */
+
+div.stButton>button{
+
+    width:100%;
+
+    height:46px;
+
+    border:none;
+
+    border-radius:14px;
+
+    background:
+        linear-gradient(
+            180deg,
+            #1FA856,
+            #198754
+        );
+
+    color:white;
+
+    font-size:15px;
+
+    font-weight:700;
+
+    letter-spacing:.2px;
+
+    box-shadow:
+        0 8px 18px rgba(25,135,84,.18);
+
+    transition:all .20s ease;
+
+}
+
+div.stButton>button:hover{
+
+    background:
+        linear-gradient(
+            180deg,
+            #27B763,
+            #1FA856
+        );
+
+    transform:translateY(-2px);
+
+    box-shadow:
+        0 12px 25px rgba(25,135,84,.25);
+
+}
+
+div.stButton>button:active{
+
+    transform:scale(.98);
+
+}
+
+
+/* ==========================================================
+   DOWNLOAD BUTTON
+========================================================== */
+
+div.stDownloadButton>button{
+
+    border-radius:14px;
+
+    font-weight:700;
+
+}
+
+
+/* ==========================================================
+   INPUTS
+========================================================== */
+
+.stTextInput input:focus,
+.stNumberInput input:focus,
+textarea:focus{
+
+    border:2px solid #198754 !important;
+
+    box-shadow:
+        0 0 0 4px rgba(25,135,84,.10);
+
+}
+
+
+/* ==========================================================
+   SELECTBOX
+========================================================== */
+
+div[data-baseweb="select"]>div{
+
+    min-height:46px;
+
+    border-radius:14px;
+
+    border:1px solid #DDE5EC;
+
+    background:white;
+
+}
+
+
+div[data-baseweb="select"]>div:hover{
+
+    border-color:#198754;
+
+}
+
+
+/* ==========================================================
+   DROPDOWN
+========================================================== */
+
+div[role="listbox"]{
+
+    background:#F8FAFC;
+
+}
+
+
+div[role="option"]{
+
+    color:#111827;
+
+    font-weight:600;
+
+    background:#F8FAFC;
+
+}
+
+
+div[role="option"]:hover{
+
+    background:#DCFCE7;
+
+    color:#065F46;
+
+}
+
+
+div[aria-selected="true"]{
+
+    background:#BBF7D0;
+
+    color:#065F46;
+
+}
+
+
+/* ==========================================================
+   KPIs
+========================================================== */
+
+div[data-testid="metric-container"]{
+
+    background:white;
+
+    border-radius:18px;
+
+    border:1px solid #DDE5EC;
+
+    padding:18px;
+
+    box-shadow:
+
+        0 8px 22px rgba(0,0,0,.05);
+
+}
+
+
+div[data-testid="metric-container"]:hover{
+
+    transform:translateY(-2px);
+
+    box-shadow:
+
+        0 14px 30px rgba(0,0,0,.08);
+
+}
+
+
+div[data-testid="stMetricLabel"]{
+
+    color:#64748B;
+
+    font-weight:700;
+
+    font-size:13px;
+
+}
+
+
+div[data-testid="stMetricValue"]{
+
+    color:#111827;
+
+    font-size:30px;
+
+    font-weight:900;
+
+}
+
+
+div[data-testid="stMetricDelta"]{
+
+    font-weight:700;
+
+}
+
+
+/* ==========================================================
+   TABS
+========================================================== */
+
+.stTabs{
+
+    margin-top:8px;
+
+}
+
+
+.stTabs [data-baseweb="tab-list"]{
+
+    gap:10px;
+
+    border-bottom:none;
+
+}
+
+
+.stTabs [data-baseweb="tab"]{
+
+    height:46px;
+
+    border-radius:14px;
+
+    background:white;
+
+    border:1px solid #DDE5EC;
+
+    color:#64748B;
+
+    font-weight:700;
+
+    transition:all .18s ease;
+
+}
+
+
+.stTabs [data-baseweb="tab"]:hover{
+
+    background:#F0FDF4;
+
+    color:#198754;
+
+}
+
+
+.stTabs [aria-selected="true"]{
+
+    background:#198754 !important;
+
+    color:white !important;
+
+    border:none !important;
+
+}
+
+
+/* ==========================================================
+   EXPANDERS
+========================================================== */
+
+details{
+
+    border-radius:18px;
+
+    border:1px solid #DDE5EC;
+
+    background:white;
+
+    overflow:hidden;
+
+}
+
+
+summary{
+
+    font-weight:700;
+
+}
+
+
+/* ==========================================================
+   ALERTAS
+========================================================== */
+
+div[data-baseweb="notification"]{
+
+    border-radius:18px;
+
+}
+
+
+/* ==========================================================
+   PLACEHOLDER
+========================================================== */
+
+input::placeholder,
+textarea::placeholder{
+
+    color:#94A3B8;
+
+    font-weight:500;
+
+}
+
+
+/* ==========================================================
+   TOOLTIP
+========================================================== */
+
+div[data-testid="stTooltipIcon"]{
+
+    color:#94A3B8;
+
+}
+
+/*==========================================================
+SIDEBAR HEADER
+==========================================================*/
+
+.sidebar-title{
+
+    text-align:center;
+
+    font-size:24px;
+
+    font-weight:800;
+
+    color:#166534;
+
+    margin-top:8px;
+
+    margin-bottom:4px;
+
+}
+
+.sidebar-subtitle{
+
+    text-align:center;
+
+    color:#64748B;
+
+    font-size:14px;
+
+    margin-bottom:10px;
+
+}
+
+section[data-testid="stSidebar"] img{
+
+    width:220px;
+
+    display:block;
+
+    margin:0 auto;
+
+    padding-top:0px;
+
+    padding-bottom:12px;
+
+}
+
+/*==========================================================
+OCULTAR SOLO EL LISTADO DE PÁGINAS
+SIN OCULTAR EL BOTÓN << DEL SIDEBAR
+==========================================================*/
+
+/* Oculta únicamente los enlaces de páginas */
+[data-testid="stSidebarNavItems"]{
+    display:none !important;
+}
+
+/* Oculta el separador si existe */
+[data-testid="stSidebarNavSeparator"]{
+    display:none !important;
+}

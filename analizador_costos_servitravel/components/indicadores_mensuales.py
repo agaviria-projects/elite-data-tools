@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from components.tablas import mostrar_tabla
 
 
 # ==========================================================
@@ -207,10 +208,8 @@ def mostrar_indicadores_mensuales(
 
     st.subheader("🚗 Comparativo de horas extra por vehículo")
 
-    st.dataframe(
-        comparativo_placas,
-        use_container_width=True,
-        hide_index=True
+    mostrar_tabla(
+        comparativo_placas
     )
     # ======================================================
     # SPRINT 1 - COMPARATIVO POR VEHÍCULO
@@ -292,10 +291,8 @@ def mostrar_indicadores_mensuales(
 
         st.subheader("🚗 Vehículos que más aumentaron las horas extra")
 
-        st.dataframe(
-            top_aumento,
-            use_container_width=True,
-            hide_index=True
+        mostrar_tabla(
+            top_aumento
         )
         # ======================================================
         # TOP 3 ZONAS CON MAYOR AUMENTO
@@ -373,10 +370,8 @@ def mostrar_indicadores_mensuales(
 
             st.subheader("🌍 Zonas donde más aumentaron las horas extra")
 
-            st.dataframe(
-                comparativo_zonas,
-                use_container_width=True,
-                hide_index=True
+            mostrar_tabla(
+                comparativo_zonas
             )
 
             mensajes = []
@@ -468,10 +463,8 @@ def mostrar_indicadores_mensuales(
 
             st.subheader("💰 Vehículos con mayor aumento en el costo de horas extra")
 
-            st.dataframe(
+            mostrar_tabla(
                 comparativo_costos,
-                use_container_width=True,
-                hide_index=True,
                 column_config={
                     "Incremento ($)": st.column_config.NumberColumn(
                         format="$ %,.0f"

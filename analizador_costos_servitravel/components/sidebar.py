@@ -1,4 +1,15 @@
+from pathlib import Path
+
 import streamlit as st
+
+
+# ==========================================================
+# RUTA LOGO
+# ==========================================================
+
+BASE = Path(__file__).resolve().parent.parent
+
+LOGO = BASE / "assets" / "logo_elite.png"
 
 
 # ==========================================================
@@ -9,10 +20,28 @@ def mostrar_sidebar(hojas):
 
     with st.sidebar:
 
-        st.markdown("## 📂 Fuente de Información")
+        # ==================================================
+        # LOGO
+        # ==================================================
 
-        st.caption(
-            "Seleccione la hoja del consolidado para iniciar el análisis."
+        if LOGO.exists():
+
+            st.image(
+                str(LOGO),
+                use_container_width=True
+            )
+
+        st.markdown(
+            """
+            <div class="sidebar-title">
+                Dashboard Operativo
+            </div>
+
+            <div class="sidebar-subtitle">
+                Analizador de Costos ELITE
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         st.divider()
@@ -29,7 +58,7 @@ def mostrar_sidebar(hojas):
 
             "PARQUEADEROS",
 
-            "PEAJES"
+            "PEAJES",
 
         ]
 
@@ -50,16 +79,16 @@ def mostrar_sidebar(hojas):
             return None
 
         # ==================================================
-        # SELECCIÓN
+        # FUENTE DE INFORMACIÓN
         # ==================================================
 
         hoja = st.selectbox(
 
-            "Hoja disponible",
+            "📂 Fuente de información",
 
             hojas_disponibles,
 
-            index=0
+            index=0,
 
         )
 
@@ -69,11 +98,11 @@ def mostrar_sidebar(hojas):
 
         if st.button(
 
-            "🔄 Actualizar Dashboard",
+            "🔄 Actualizar datos",
 
             use_container_width=True,
 
-            type="primary"
+            type="primary",
 
         ):
 
@@ -83,58 +112,10 @@ def mostrar_sidebar(hojas):
 
         st.divider()
 
-        # ==================================================
-        # INFORMACIÓN
-        # ==================================================
-
-        st.markdown("### ℹ️ Información")
-
-        st.info(
-            """
-**Archivo**
-
-INFORME_LIQUIDACION.xlsb
-
-**Estado**
-
-Conectado correctamente
-            """
-        )
-
-        st.success(f"📄 Hoja activa: **{hoja}**")
-
-        st.divider()
-
-        # ==================================================
-        # MÓDULOS
-        # ==================================================
-
-        st.markdown("### 📊 Módulos")
-
-        st.caption("✔ KPIs")
-
-        st.caption("✔ Resumen Ejecutivo")
-
-        st.caption("⏳ Comparativo Mensual")
-
-        st.caption("⏳ Ranking de Zonas")
-
-        st.caption("⏳ Ranking de Conceptos")
-
-        st.caption("⏳ Gráficos")
-
-        st.caption("⏳ Hallazgos")
-
-        st.caption("⏳ Exportación")
-
-        st.divider()
-
-        st.caption("Analizador de Costos Operativos")
-
         st.caption("Versión 1.0")
 
     # ======================================================
-    # DATAFRAME SELECCIONADO
+    # DATAFRAME
     # ======================================================
 
     df = hojas.get(hoja)
@@ -149,6 +130,6 @@ Conectado correctamente
 
         "hoja": hoja,
 
-        "df": df
+        "df": df,
 
     }
