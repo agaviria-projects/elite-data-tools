@@ -465,11 +465,7 @@ def mostrar_indicadores_mensuales(
 
             mostrar_tabla(
                 comparativo_costos,
-                column_config={
-                    "Incremento ($)": st.column_config.NumberColumn(
-                        format="$ %,.0f"
-                    )
-                }
+                height=420
             )
             
         # ==================================================
