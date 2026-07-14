@@ -62,3 +62,18 @@ Control_ANS_v5/control-ans-evidencias-*.json
 
 __pycache__/
 *.pyc
+
+# ======================================
+# DASHBOARDS GENERADOS
+# ======================================
+
+Control_ANS_v5/dashboard/*.xlsm
+
+# ======================================
+# ARCHIVOS GENERADOS CONTROL ANS
+# ======================================
+
+Control_ANS_v5/data_clean/FENIX_ANS.xlsx
+Control_ANS_v5/data_clean/FENIX_ANS_EPM.xlsx
+Control_ANS_v5/data_clean/FENIX_CLEAN.xlsx
+Control_ANS_v5/data_raw/correcciones_fenix_ans.xlsx
