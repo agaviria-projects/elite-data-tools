@@ -1,7 +1,23 @@
 import ttkbootstrap as ttk
 from tkinter import messagebox
+
+print("=" * 60)
+print("SIDEBAR.PY CARGADO")
+print(__file__)
+print("=" * 60)
+
 from ui.styles import *
-from utils.navigation import mostrar_home, mostrar_informe_actas,mostrar_generador_ans,mostrar_validacion_materiales,mostrar_compresor_pdf, mostrar_whatsapp, mostrar_consolidador_excel, mostrar_analizador_costos
+from utils.navigation import (
+    mostrar_home,
+    mostrar_informe_actas,
+    mostrar_generador_ans,
+    mostrar_validacion_materiales,
+    mostrar_compresor_pdf,
+    mostrar_whatsapp,
+    mostrar_consolidador_excel,
+    mostrar_analizador_costos,
+    mostrar_calendario_ans,
+)
 MENU = [
     ('home','🏠','Inicio'),
 
@@ -19,7 +35,11 @@ MENU = [
 
     ('costos','💲','Analizador Costos'),
 
+    ('calendario','🗓️','Calendario ANS'),
+
 ]
+
+print(MENU)
 
 items_menu={}; barra_menu={}
 def activar_menu(act):
@@ -38,6 +58,7 @@ def abrir_modulo(m,p):
     elif m == "whatsapp": mostrar_whatsapp(p)
     elif m == "consolidador":mostrar_consolidador_excel(p)
     elif m == "costos":mostrar_analizador_costos(p)
+    elif m == "calendario":mostrar_calendario_ans(p)
 def salir(app):
     if messagebox.askyesno('Salir','¿Desea salir de ELITE Data Tools?'): app.destroy()
 def crear_sidebar(app,panel):

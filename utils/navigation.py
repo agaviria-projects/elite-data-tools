@@ -159,3 +159,18 @@ def mostrar_analizador_costos(panel):
     limpiar_panel(panel)
 
     crear_analizador_costos(panel)
+
+# ==========================================
+# CALENDARIO ANS
+# ==========================================
+
+def mostrar_calendario_ans(panel):
+    """
+    Muestra el módulo Calendario ANS.
+    """
+
+    from modules.calendario_ans import crear_calendario
+
+    limpiar_panel(panel)
+
+    crear_calendario(panel)    
