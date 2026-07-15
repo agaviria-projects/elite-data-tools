@@ -1,11 +1,6 @@
 import ttkbootstrap as ttk
 from tkinter import messagebox
 
-print("=" * 60)
-print("SIDEBAR.PY CARGADO")
-print(__file__)
-print("=" * 60)
-
 from ui.styles import *
 from utils.navigation import (
     mostrar_home,
@@ -38,8 +33,6 @@ MENU = [
     ('calendario','🗓️','Calendario ANS'),
 
 ]
-
-print(MENU)
 
 items_menu={}; barra_menu={}
 def activar_menu(act):
