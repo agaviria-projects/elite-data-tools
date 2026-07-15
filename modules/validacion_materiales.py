@@ -213,6 +213,8 @@ def crear_validacion_materiales(panel):
 
         bootstyle="secondary",
 
+        cursor="hand2",
+
         command=lambda: cambiar_proyecto(
 
             ruta,
@@ -268,6 +270,8 @@ def crear_validacion_materiales(panel):
         width=28,
 
         bootstyle="success",
+
+        cursor="hand2",
 
         command=ejecutar_validacion
 

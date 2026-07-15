@@ -158,6 +158,7 @@ def crear_analizador_costos(panel):
         panel_dashboard,
         text="🚀 Iniciar Dashboard",
         bootstyle="success",
+        cursor="hand2",
         command=ejecutar_dashboard
     ).pack(fill="x", pady=5)
 

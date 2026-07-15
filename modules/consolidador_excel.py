@@ -221,6 +221,7 @@ def crear_consolidador_excel(panel):
         frame_proyecto,
         text="Cambiar carpeta",
         bootstyle="secondary",
+        cursor="hand2",
         command=cambiar_proyecto
     ).pack(
         anchor="e",
@@ -272,6 +273,7 @@ def crear_consolidador_excel(panel):
         text="▶ Ejecutar Consolidación",
         bootstyle="success",
         width=28,
+        cursor="hand2",
         command=ejecutar
     ).pack(
         pady=10

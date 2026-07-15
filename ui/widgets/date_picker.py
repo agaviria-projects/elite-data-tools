@@ -84,6 +84,7 @@ class DatePicker(ttk.Frame):
             text="🗓",
             width=3,
             bootstyle="secondary",
+            cursor="hand2",
             command=self.abrir_calendario
         )
 
@@ -148,6 +149,7 @@ class DatePicker(ttk.Frame):
             self.popup,
             text="Aceptar",
             bootstyle="success",
+            cursor="hand2",
             command=aceptar
         ).pack(
             pady=(0, 10)

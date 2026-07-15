@@ -334,6 +334,7 @@ def crear_generador_ans(panel):
         text="▶ Generar Informe ANS",
         width=25,
         bootstyle="success",
+        cursor="hand2",
         command=lambda: ejecutar_informe(
             "OPERATIVO"
             if tipo_calculo.get() == "ANS Operativo"

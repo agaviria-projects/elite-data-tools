@@ -222,6 +222,8 @@ def crear_compresor_pdf(panel):
 
         bootstyle="secondary",
 
+        cursor="hand2",
+
         command=lambda: cambiar_proyecto(
 
             ruta,
@@ -275,6 +277,8 @@ def crear_compresor_pdf(panel):
         text="▶ Comprimir PDFs",
 
         width=28,
+
+        cursor="hand2",
 
         bootstyle="success",
 

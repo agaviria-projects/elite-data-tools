@@ -45,7 +45,7 @@ def crear_sidebar(app,panel):
     ttk.Label(sb,text='ELITE',font=('Segoe UI',20,'bold'),bootstyle='success').pack(anchor='w')
     ttk.Label(sb,text='Data Tools Suite',font=FUENTE_PEQUEÑA).pack(anchor='w',pady=(0,15))
     ttk.Separator(sb).pack(fill='x',pady=(0,12))
-    ttk.Label(sb,text='MÓDULOS',font=('Segoe UI',9,'bold'),bootstyle='secondary').pack(anchor='w',pady=(0,10))
+    ttk.Label(sb,text='MÓDULOS',font=('Segoe UI',9,'bold'), bootstyle='light').pack(anchor='w',pady=(0,10))
     menu=ttk.Frame(sb); menu.pack(fill='x')
     for mod,ico,txt in MENU:
         row=ttk.Frame(menu); row.pack(fill='x',pady=2)
@@ -58,5 +58,5 @@ def crear_sidebar(app,panel):
         it.bind('<Button-1>',lambda e,m=mod: abrir_modulo(m,panel)); items_menu[mod]=it
     ttk.Frame(sb).pack(expand=True,fill='both')
     ttk.Separator(sb).pack(fill='x',pady=8)
-    ttk.Button(sb,text='🚪 Salir',bootstyle='danger-outline',command=lambda: salir(app)).pack(fill='x')
+    ttk.Button(sb, text='🚪 Salir', bootstyle='danger-outline', cursor='hand2', command=lambda: salir(app)).pack(fill='x')
     activar_menu('home'); return sb

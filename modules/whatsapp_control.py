@@ -188,7 +188,7 @@ def validar_proyecto_completo():
 # ==========================================================
 
 def ejecutar_whatsapp():
-
+    print("ENTRÓ A EJECUTAR_WHATSAPP")
     desde = fecha_desde.get()
     hasta = fecha_hasta.get()
 
@@ -373,6 +373,7 @@ def crear_panel_proyecto(parent):
         izquierda,
         text="Cambiar carpeta",
         bootstyle="secondary",
+        cursor="hand2",
         command=lambda: cambiar_proyecto(
             ruta,
             frm_estado
@@ -482,13 +483,18 @@ def crear_panel_proceso(parent):
         pady=(0, 12)
     )
 
-    ttk.Button(
+    btn = ttk.Button(
         frm,
         text="🚀 Ejecutar Cruce WhatsApp + ANS",
         bootstyle="success",
         width=35,
+        cursor="hand2",
         command=ejecutar_whatsapp
-    ).pack()
+    )
+
+    print("Cursor del botón:", btn.cget("cursor"))
+
+    btn.pack()
 
 # ==========================================================
 # PANEL CONSOLA
