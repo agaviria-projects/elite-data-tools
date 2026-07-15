@@ -53,20 +53,20 @@ def mostrar_informe_actas(panel):
 
     crear_informe_actas(panel)
 
-# ==========================================
-# CONTROL ANS
-# ==========================================
+# # ==========================================
+# # CONTROL ANS
+# # ==========================================
 
-def mostrar_control_ans(panel):
-    """
-    Muestra el módulo Control ANS.
-    """
+# def mostrar_control_ans(panel):
+#     """
+#     Muestra el módulo Control ANS.
+#     """
 
-    from modules.control_ans import crear_control_ans
+#     from modules.control_ans import crear_control_ans
 
-    limpiar_panel(panel)
+#     limpiar_panel(panel)
 
-    crear_control_ans(panel)
+#     crear_control_ans(panel)
 
 
 # ==========================================
