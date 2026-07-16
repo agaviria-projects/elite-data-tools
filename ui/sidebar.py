@@ -12,11 +12,12 @@ from utils.navigation import (
     mostrar_consolidador_excel,
     mostrar_analizador_costos,
     mostrar_calendario_ans,
+    mostrar_draco,
 )
 MENU = [
     ('home','🏠','Inicio'),
 
-    ('actas','📊','Informe Actas'),
+    ('actas','📊','Informe Actas Fenix'),
 
     ('ans','📈','Generador Informe ANS'),
 
@@ -31,6 +32,8 @@ MENU = [
     ('costos','💲','Analizador Costos'),
 
     ('calendario','🗓️','Calendario ANS'),
+
+    ("draco", "📄", "Informe Actas DRACO"),
 
 ]
 
@@ -52,6 +55,7 @@ def abrir_modulo(m,p):
     elif m == "consolidador":mostrar_consolidador_excel(p)
     elif m == "costos":mostrar_analizador_costos(p)
     elif m == "calendario":mostrar_calendario_ans(p)
+    elif m == "draco":mostrar_draco(p)
 def salir(app):
     if messagebox.askyesno('Salir','¿Desea salir de ELITE Data Tools?'): app.destroy()
 def crear_sidebar(app,panel):

@@ -68,8 +68,8 @@ def ejecutar_actas(modo):
 
 def crear_informe_actas(panel):
     vista=crear_vista(panel)
-    ttk.Label(vista,text="📊 Informe Actas",font=("Segoe UI",24,"bold"),bootstyle="success").pack(anchor="w")
-    ttk.Label(vista,text="Generación automática de informes de actas.").pack(anchor="w",pady=(0,15))
+    ttk.Label(vista,text="📊 Informe Actas Fenix",font=("Segoe UI",24,"bold"),bootstyle="success").pack(anchor="w")
+    ttk.Label(vista,text="Consolidación automática de las actas.").pack(anchor="w",pady=(0,15))
     cuerpo=ttk.Frame(vista);cuerpo.pack(fill="both",expand=True)
     cuerpo.columnconfigure((0,1),weight=1)
     izq=ttk.Frame(cuerpo);izq.grid(row=0,column=0,sticky="nsew",padx=(0,8))

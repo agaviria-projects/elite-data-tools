@@ -173,4 +173,19 @@ def mostrar_calendario_ans(panel):
 
     limpiar_panel(panel)
 
-    crear_calendario(panel)    
+    crear_calendario(panel) 
+
+# ==========================================
+# INFORME ACTAS DRACO
+# ==========================================
+
+def mostrar_draco(panel):
+    """
+    Muestra el módulo Informe Actas DRACO.
+    """
+
+    from modules.draco_actas import crear_draco
+
+    limpiar_panel(panel)
+
+    crear_draco(panel)   
