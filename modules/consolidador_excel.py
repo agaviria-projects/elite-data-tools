@@ -176,6 +176,14 @@ def crear_consolidador_excel(panel):
         bootstyle="success"
     ).pack(anchor="w")
 
+    ttk.Label(
+
+        vista,
+
+        text="Consolidación de archivos Servitravel."
+
+    ).pack(anchor="w", pady=(0, 15))
+
     # ======================================================
     # PANEL SUPERIOR
     # ======================================================
