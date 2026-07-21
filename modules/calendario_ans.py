@@ -59,8 +59,8 @@ def abrir_calendario(parent):
     # CENTRAR VENTANA SOBRE EL LAUNCHER
     # ======================================================
 
-    ANCHO = 600
-    ALTO = 420
+    ANCHO = 320
+    ALTO = 280
 
     MARGEN_SUPERIOR = 190
 
