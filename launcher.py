@@ -22,7 +22,7 @@ app = ttk.Window(
     themename="darkly"
 )
 
-app.title("ELITE Data Tools")
+app.title("Suite de Automatización de Datos")
 
 app.iconbitmap(str(ICONO))
 

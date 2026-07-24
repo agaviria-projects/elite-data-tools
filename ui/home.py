@@ -58,7 +58,7 @@ def crear_home(parent):
     ttk.Label(
         home,
         text=(
-            "ELITE DATA TOOLS es la plataforma corporativa desarrollada para "
+            "DataSuite es la plataforma corporativa desarrollada para "
             "ELITE Ingenieros S.A.S., diseñada para centralizar herramientas "
             "de automatización, procesamiento de datos, generación de informes "
             "y optimización de procesos empresariales desde un único entorno.\n\n"
@@ -87,8 +87,8 @@ def crear_home(parent):
 
     imagen = Image.open(RUTA_LOGO)
 
-    ancho_max = 650
-    alto_max = 220
+    ancho_max = 600
+    alto_max = 180
 
     imagen.thumbnail((ancho_max, alto_max), Image.LANCZOS)
 

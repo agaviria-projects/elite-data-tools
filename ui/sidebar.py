@@ -57,12 +57,12 @@ def abrir_modulo(m,p):
     elif m == "calendario":mostrar_calendario_ans(p)
     elif m == "draco":mostrar_draco(p)
 def salir(app):
-    if messagebox.askyesno('Salir','¿Desea salir de ELITE Data Tools?'): app.destroy()
+    if messagebox.askyesno('Salir','¿Desea salir del DataSuite.....?'): app.destroy()
 def crear_sidebar(app,panel):
     sb=ttk.Frame(app,width=SIDEBAR_WIDTH,padding=18); sb.grid(row=1,column=0,sticky='ns'); sb.grid_propagate(False)
-    ttk.Label(sb,text='ELITE',font=('Segoe UI',20,'bold'),bootstyle='success').pack(anchor='w')
-    ttk.Label(sb,text='Data Tools Suite',font=FUENTE_PEQUEÑA).pack(anchor='w',pady=(0,15))
-    ttk.Separator(sb).pack(fill='x',pady=(0,12))
+    # ttk.Label(sb,text='DataSuite',font=('Segoe UI',20,'bold'),bootstyle='success').pack(anchor='w')
+    # ttk.Label(sb,text='Plataforma de Automatización',font=FUENTE_PEQUEÑA).pack(anchor='w',pady=(0,15))
+    # ttk.Separator(sb).pack(fill='x',pady=(0,12))
     ttk.Label(sb,text='MÓDULOS',font=('Segoe UI',9,'bold'), bootstyle='light').pack(anchor='w',pady=(0,10))
     menu=ttk.Frame(sb); menu.pack(fill='x')
     for mod,ico,txt in MENU:

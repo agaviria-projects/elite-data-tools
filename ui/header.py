@@ -24,13 +24,28 @@ def crear_header(app):
 
     ttk.Label(
         header,
-        text="ELITE DATA TOOLS",
+        text="DataSuite",
         font=FUENTE_TITULO,
         bootstyle="success"
     ).grid(
         row=0,
         column=0,
         sticky="w"
+    )
+    # ==========================================================
+    # SUBTÍTULO
+    # ==========================================================
+
+    ttk.Label(
+        header,
+        text="Plataforma de Automatización",
+        font=FUENTE_PEQUEÑA,
+        bootstyle="light"
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w",
+        pady=(2, 0)
     )
 
     ttk.Label(
@@ -46,11 +61,11 @@ def crear_header(app):
     ttk.Separator(
         header
     ).grid(
-        row=1,
+        row=2,
         column=0,
         columnspan=2,
         sticky="ew",
-        pady=(8, 0)
+        pady=(12, 0)
     )
 
     return header
