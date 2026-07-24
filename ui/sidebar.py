@@ -57,7 +57,7 @@ def abrir_modulo(m,p):
     elif m == "calendario":mostrar_calendario_ans(p)
     elif m == "draco":mostrar_draco(p)
 def salir(app):
-    if messagebox.askyesno('Salir','¿Desea salir del DataSuite.....?'): app.destroy()
+    if messagebox.askyesno('Salir','¿Desea salir de la Plataforma.....?'): app.destroy()
 def crear_sidebar(app,panel):
     sb=ttk.Frame(app,width=SIDEBAR_WIDTH,padding=18); sb.grid(row=1,column=0,sticky='ns'); sb.grid_propagate(False)
     # ttk.Label(sb,text='DataSuite',font=('Segoe UI',20,'bold'),bootstyle='success').pack(anchor='w')
