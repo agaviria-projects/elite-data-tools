@@ -6,6 +6,7 @@ from utils.navigation import (
     mostrar_home,
     mostrar_informe_actas,
     mostrar_generador_ans,
+    mostrar_seguimiento_ans,
     mostrar_validacion_materiales,
     mostrar_compresor_pdf,
     mostrar_whatsapp,
@@ -20,6 +21,8 @@ MENU = [
     ('actas','📊','Informe Actas Fenix'),
 
     ('ans','📈','Generador Informe ANS'),
+
+    ('seguimiento_ans', '📨', 'Seguimiento ANS'),
 
     ('materiales','🛠️','Validación Materiales'),
 
@@ -49,6 +52,7 @@ def abrir_modulo(m,p):
     if m=='home': mostrar_home(p)
     elif m=='actas': mostrar_informe_actas(p)
     elif m== 'ans': mostrar_generador_ans(p)
+    elif m == "seguimiento_ans": mostrar_seguimiento_ans(p)
     elif m == "materiales": mostrar_validacion_materiales(p)
     elif m=="pdf": mostrar_compresor_pdf(p)
     elif m == "whatsapp": mostrar_whatsapp(p)

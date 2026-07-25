@@ -11,7 +11,7 @@ from modules.informe_ans.src.agrupador import construir_informes
 from modules.informe_ans.src.generador_correo import construir_correos
 from modules.informe_ans.src.generador_html import generar_html
 from modules.informe_ans.src.lector_excel import leer_excel
-from modules.informe_ans.src.outlook import procesar_correo_outlook
+from modules.informe_ans.src.outlook import abrir_correo_outlook
 from modules.informe_ans.src.validador import validar_archivo_fenix
 
 
@@ -37,17 +37,13 @@ def ejecutar_informe_ans(
 
     informar("📄 Validando archivo FENIX...")
 
-    validar_archivo_fenix(
-        configuracion.archivo_fenix
-    )
+    validar_archivo_fenix()
 
     informar("✅ Archivo válido.")
 
     informar("📖 Leyendo información...")
 
-    df = leer_excel(
-        configuracion.archivo_fenix
-    )
+    df = leer_excel()
 
     informar(
         f"✅ Registros cargados: {len(df):,}"
@@ -63,8 +59,10 @@ def ejecutar_informe_ans(
 
     if configuracion.solo_primer_correo:
         correos = correos[:1]
+
         informar(
-            "🧪 Modo de prueba: se procesará únicamente el primer correo."
+            "🧪 Modo de prueba: "
+            "se procesará únicamente el primer correo."
         )
 
     CARPETA_HTML.mkdir(
@@ -80,18 +78,23 @@ def ejecutar_informe_ans(
         start=1,
     ):
         grupo = correo["grupo"]
+
         pedidos_grupo = correo.get(
             "total_pedidos",
             0,
         )
 
         informar("-" * 68)
+
         informar(
-            f"📨 Procesando correo {numero}/{len(correos)}: {grupo}"
+            f"📨 Procesando correo "
+            f"{numero}/{len(correos)}: {grupo}"
         )
+
         informar(
             f"   Asunto: {correo['asunto']}"
         )
+
         informar(
             f"   Pedidos: {pedidos_grupo:,}"
         )
@@ -111,25 +114,18 @@ def ejecutar_informe_ans(
         )
 
         if configuracion.abrir_outlook:
-            if configuracion.enviar_automaticamente:
-                informar(
-                    "📤 Enviando correo automáticamente desde Outlook..."
-                )
-            else:
-                informar(
-                    "📬 Creando correo para revisión en Outlook..."
-                )
-
-            procesar_correo_outlook(
-                correo=correo,
-                html=html,
-                enviar=configuracion.enviar_automaticamente,
+            informar(
+                "📬 Creando correo para revisión en Outlook..."
             )
 
-            if configuracion.enviar_automaticamente:
-                informar("✅ Correo enviado.")
-            else:
-                informar("✅ Correo abierto en Outlook.")
+            abrir_correo_outlook(
+                correo,
+                html,
+            )
+
+            informar(
+                "✅ Correo abierto en Outlook."
+            )
 
         total_pedidos += pedidos_grupo
         correos_generados += 1
@@ -138,21 +134,28 @@ def ejecutar_informe_ans(
 
     informar("=" * 68)
     informar("✅ PROCESO FINALIZADO")
+
     informar(
         f"✔ Correos generados : {correos_generados}"
     )
+
     informar(
         f"✔ Total grupos      : {len(correos)}"
     )
+
     informar(
         f"✔ Total pedidos     : {total_pedidos:,}"
     )
+
     informar(
-        f"✔ Tiempo ejecución  : {formatear_tiempo(tiempo_segundos)}"
+        f"✔ Tiempo ejecución  : "
+        f"{formatear_tiempo(tiempo_segundos)}"
     )
+
     informar(
         f"✔ Ruta de salida    : {CARPETA_HTML}"
     )
+
     informar("=" * 68)
 
     return ResultadoEjecucion(
@@ -190,7 +193,9 @@ def guardar_html(
     return archivo_html
 
 
-def normalizar_nombre_archivo(nombre: str) -> str:
+def normalizar_nombre_archivo(
+    nombre: str,
+) -> str:
     """
     Convierte un nombre de grupo en un nombre válido de archivo.
     """
@@ -203,7 +208,9 @@ def normalizar_nombre_archivo(nombre: str) -> str:
     )
 
 
-def formatear_tiempo(segundos: float) -> str:
+def formatear_tiempo(
+    segundos: float,
+) -> str:
     """
     Convierte segundos en formato HH:MM:SS.
     """

@@ -85,6 +85,21 @@ def mostrar_generador_ans(panel):
     crear_generador_ans(panel)
 
 # ==========================================
+# SEGUIMIENTO ANS
+# ==========================================
+
+def mostrar_seguimiento_ans(panel):
+    """
+    Muestra el módulo Seguimiento ANS.
+    """
+
+    from modules.informe_ans.view import crear_seguimiento_ans
+
+    limpiar_panel(panel)
+
+    crear_seguimiento_ans(panel)
+    
+# ==========================================
 # VALIDACIÓN MATERIALES
 # ==========================================
 
@@ -189,3 +204,4 @@ def mostrar_draco(panel):
     limpiar_panel(panel)
 
     crear_draco(panel)   
+
