@@ -2,7 +2,10 @@ from src.validador import validar_archivo_fenix
 from src.lector_excel import leer_excel
 from src.agrupador import construir_informes
 from src.generador_correo import construir_correos
+from src.generador_html import generar_html
 from src.outlook import abrir_correo_outlook
+
+from config.parametros import CARPETA_HTML
 
 # ==========================================================
 # MAIN
@@ -49,9 +52,6 @@ def main():
     print("📧 Construyendo modelo de correos...\n")
 
     correos = construir_correos(informes)
-
-    from src.generador_html import generar_html
-    from config.parametros import CARPETA_HTML
 
     # ------------------------------------------------------
     # MOSTRAR MODELO DE CORREO
@@ -102,11 +102,8 @@ def main():
         )
 
         # --------------------------------------------------
-        # GENERAR HTML
+        # GUARDAR HTML
         # --------------------------------------------------
-
-        html = generar_html(correo)
-
         archivo_html = (
             CARPETA_HTML
             / f"{correo['grupo'].replace(' ', '_')}.html"
