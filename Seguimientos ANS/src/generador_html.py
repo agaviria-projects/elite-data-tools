@@ -276,6 +276,8 @@ def badge_estado(estado: str) -> str:
 
     estado = estado.strip().upper()
 
+    texto_mostrar = estado.replace("_", " ")
+
     colores = {
 
         "A TIEMPO": (
@@ -314,15 +316,18 @@ def badge_estado(estado: str) -> str:
     <span
         style="
             display:inline-block;
+            min-width:95px;
+            text-align:center;
             background:{fondo};
             color:{texto};
-            padding:4px 10px;
-            border-radius:12px;
-            font-weight:bold;
+            padding:4px 8px;
+            border-radius:14px;
+            font-weight:600;
             font-size:11px;
             white-space:nowrap;
+            box-sizing:border-box;
         ">
-        {estado}
+        {texto_mostrar}
     </span>
     """
 
@@ -376,7 +381,64 @@ def generar_tabla(df) -> str:
         """
 
     html += "</tr>"
+    # ======================================================
+    # ORDEN OPERATIVO
+    # ======================================================
 
+    orden_estados = {
+
+        "VENCIDO": 1,
+
+        "ALERTA_0 DÍAS": 2,
+        "ALERTA_0 DIAS": 2,
+
+        "ALERTA": 3,
+
+        "A TIEMPO": 4,
+
+    }
+
+    df = df.copy()
+
+    df["ORDEN_ESTADO"] = (
+        df["ESTADO"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .str.replace("_", " ", regex=False)
+        .map({
+            "VENCIDO": 1,
+            "ALERTA 0 DÍAS": 2,
+            "ALERTA 0 DIAS": 2,
+            "ALERTA": 3,
+            "A TIEMPO": 4,
+        })
+        .fillna(99)
+    )
+
+    df = df.sort_values(
+
+        by=[
+
+            "ORDEN_ESTADO",
+
+            "DIAS_RESTANTES",
+
+        ],
+
+        ascending=[
+
+            True,
+
+            True,
+
+        ]
+
+    )
+
+    df = df.drop(
+        columns="ORDEN_ESTADO"
+    )
     # ======================================================
     # FILAS
     # ======================================================
