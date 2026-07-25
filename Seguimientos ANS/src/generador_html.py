@@ -77,9 +77,347 @@ def generar_html(
 
     # En la primera versión aún no existen actividades
 
+    actividades = generar_actividades(correo)
+
     html = html.replace(
         "{{ACTIVIDADES}}",
-        "<h3>Próximamente...</h3>",
+        actividades,
     )
+
+    return html
+
+# ==========================================================
+# GENERAR ACTIVIDADES
+# ==========================================================
+
+def generar_actividades(
+    correo: dict,
+) -> str:
+    """
+    Construye el bloque de actividades del correo.
+    """
+
+    html = ""
+
+    for bloque in correo["bloques"]:
+
+        productos = ", ".join(
+            bloque["productos"]
+        )
+
+        html += f"""
+        <hr>
+
+        <h2 style="color:#0f766e;">
+            📦 Producto: {productos}
+        </h2>
+
+        <p>
+            <b>Total pedidos:</b>
+            {bloque['total_pedidos']}
+        </p>
+        """
+
+        for actividad in bloque["actividades"]:
+
+            # ------------------------------------------
+            # RESUMEN DE LA ACTIVIDAD
+            # ------------------------------------------
+
+            resumen_html = generar_resumen(
+                actividad["resumen"]
+            )
+
+            tabla_html = generar_tabla(
+                actividad["tabla"]
+            )
+
+            html += f"""
+            <div
+                style="
+                    margin-left:25px;
+                    margin-bottom:25px;
+                ">
+
+                <h3
+                    style="
+                        color:#1565c0;
+                        margin-bottom:5px;
+                    ">
+
+                    📋 {actividad['nombre']}
+
+                </h3>
+
+                <p>
+
+                    <b>Total pedidos:</b>
+
+                    {actividad['total']}
+
+                </p>
+
+                {resumen_html}
+
+                {tabla_html}
+
+                </div>
+            """
+
+    return html
+
+# ==========================================================
+# GENERAR RESUMEN
+# ==========================================================
+
+def generar_resumen(
+    resumen,
+) -> str:
+    """
+    Genera la tabla resumen por estado.
+    """
+
+    colores = {
+
+        "VENCIDO": "#dc2626",
+
+        "ALERTA_0 DÍAS": "#f97316",
+
+        "ALERTA": "#facc15",
+
+        "A TIEMPO": "#16a34a",
+
+    }
+
+    html = """
+    <table
+        style="
+            width:420px;
+            border-collapse:collapse;
+            margin-top:10px;
+            margin-bottom:20px;
+            font-size:13px;
+        ">
+    """
+
+    html += """
+        <tr
+            style="
+                background:#0f766e;
+                color:white;
+            ">
+
+            <th style="padding:8px;">Estado</th>
+
+            <th style="padding:8px;">Cantidad</th>
+
+            <th style="padding:8px;">%</th>
+
+        </tr>
+    """
+
+    for _, fila in resumen.iterrows():
+
+        estado = fila["ESTADO"]
+
+        color = colores.get(
+            estado,
+            "#6b7280"
+        )
+
+        html += f"""
+
+        <tr>
+
+            <td
+                style="
+                    padding:6px;
+                    border:1px solid #ddd;
+                ">
+
+                <span style="color:{color};">●</span>
+
+                {estado}
+
+            </td>
+
+            <td
+                align="center"
+                style="border:1px solid #ddd;">
+
+                {fila['TOTAL']}
+
+            </td>
+
+            <td
+                align="center"
+                style="border:1px solid #ddd;">
+
+                {fila['PORCENTAJE']}%
+
+            </td>
+
+        </tr>
+
+        """
+
+    html += "</table>"
+
+    return html
+
+# ==========================================================
+# BADGE ESTADO
+# ==========================================================
+
+def badge_estado(estado: str) -> str:
+    """
+    Devuelve una etiqueta HTML coloreada según el estado.
+    """
+
+    estado = estado.strip().upper()
+
+    colores = {
+
+        "A TIEMPO": (
+            "#d1fae5",
+            "#166534",
+        ),
+
+        "ALERTA": (
+            "#fef3c7",
+            "#92400e",
+        ),
+
+        "ALERTA_0 DÍAS": (
+            "#fed7aa",
+            "#9a3412",
+        ),
+
+        "ALERTA_0 DIAS": (
+            "#fed7aa",
+            "#9a3412",
+        ),
+
+        "VENCIDO": (
+            "#fee2e2",
+            "#991b1b",
+        ),
+
+    }
+
+    fondo, texto = colores.get(
+        estado,
+        ("#f3f4f6", "#374151")
+    )
+
+    return f"""
+    <span
+        style="
+            display:inline-block;
+            background:{fondo};
+            color:{texto};
+            padding:4px 10px;
+            border-radius:12px;
+            font-weight:bold;
+            font-size:11px;
+            white-space:nowrap;
+        ">
+        {estado}
+    </span>
+    """
+
+# ==========================================================
+# GENERAR TABLA
+# ==========================================================
+
+def generar_tabla(df) -> str:
+    """
+    Genera una tabla HTML manteniendo exactamente
+    las columnas y el orden del DataFrame.
+    """
+
+    html = """
+    <table
+        style="
+            width:100%;
+            border-collapse:collapse;
+            margin-top:15px;
+            margin-bottom:30px;
+            font-size:12px;
+            font-family:Segoe UI, Arial, sans-serif;
+        ">
+    """
+
+    # ======================================================
+    # ENCABEZADO
+    # ======================================================
+
+    html += """
+    <tr style="
+        background:#0f766e;
+        color:white;
+    ">
+    """
+
+    for columna in df.columns:
+
+        html += f"""
+        <th
+            style="
+                padding:8px;
+                border:1px solid #d1d5db;
+                text-align:center;
+                white-space:nowrap;
+            ">
+
+            {columna}
+
+        </th>
+        """
+
+    html += "</tr>"
+
+    # ======================================================
+    # FILAS
+    # ======================================================
+
+    for i, (_, fila) in enumerate(df.iterrows()):
+
+        color_fila = "#ffffff" if i % 2 == 0 else "#f8fafc"
+
+        html += f"""
+        <tr style="background:{color_fila};">
+        """
+
+        for columna in df.columns:
+
+            valor = fila[columna]
+
+            if valor is None:
+                valor = ""
+
+            else:
+                valor = str(valor)
+
+            if columna == "ESTADO":
+
+                valor = badge_estado(str(valor))
+
+            html += f"""
+            <td
+                style="
+                    padding:6px;
+                    border:1px solid #e5e7eb;
+                    vertical-align:top;
+                ">
+
+                {valor}
+
+            </td>
+            """
+
+        html += "</tr>"
+
+    html += "</table>"
 
     return html
