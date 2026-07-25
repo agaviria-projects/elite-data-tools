@@ -342,11 +342,10 @@ def generar_resumen(
                 style="
                     padding:6px;
                     border:1px solid #ddd;
+                    text-align:center;
                 ">
 
-                <span style="color:{color};">●</span>
-
-                {estado}
+                {badge_estado(str(estado))}
 
             </td>
 
@@ -425,14 +424,14 @@ def badge_estado(estado: str) -> str:
     <span
         style="
             display:inline-block;
-            min-width:95px;
+            min-width:120px;
             text-align:center;
             background:{fondo};
             color:{texto};
-            padding:4px 8px;
+            padding:6px 12px;
             border-radius:14px;
-            font-weight:600;
-            font-size:11px;
+            font-weight:700;
+            font-size:12px;
             white-space:nowrap;
             box-sizing:border-box;
         ">
