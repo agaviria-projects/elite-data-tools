@@ -90,7 +90,12 @@ def generar_html(
         "{{ACTIVIDADES}}",
         actividades,
     )
+    footer = generar_footer(correo)
 
+    html = html.replace(
+        "{{FOOTER}}",
+        footer,
+    )
     return html
 # ==========================================================
 # RESUMEN EJECUTIVO
@@ -456,7 +461,6 @@ def generar_tabla(df) -> str:
             font-family:Segoe UI, Arial, sans-serif;
         ">
     """
-
     # ======================================================
     # ENCABEZADO
     # ======================================================
@@ -587,3 +591,113 @@ def generar_tabla(df) -> str:
     html += "</table>"
 
     return html
+# ==========================================================
+# LEER FOOTER
+# ==========================================================
+
+PLANTILLA_FOOTER = (
+    CARPETA_TEMPLATES
+    / "footer.html"
+)
+
+
+def leer_footer():
+
+    with open(
+        PLANTILLA_FOOTER,
+        "r",
+        encoding="utf-8",
+    ) as archivo:
+
+        return archivo.read()
+
+
+# ==========================================================
+# GENERAR FOOTER
+# ==========================================================
+
+def generar_footer(correo):
+
+    html = leer_footer()
+
+    vencidos = 0
+    alerta0 = 0
+
+    for bloque in correo["bloques"]:
+
+        for actividad in bloque["actividades"]:
+
+            resumen = actividad["resumen"]
+
+            for _, fila in resumen.iterrows():
+
+                estado = (
+                    str(fila["ESTADO"])
+                    .strip()
+                    .upper()
+                    .replace("_", " ")
+                )
+
+                total = int(fila["TOTAL"])
+
+                if estado == "VENCIDO":
+
+                    vencidos += total
+
+                elif estado in (
+
+                    "ALERTA 0 DÍAS",
+                    "ALERTA 0 DIAS",
+
+                ):
+
+                    alerta0 += total
+
+    # ------------------------------------------------------
+    # MENSAJE DINÁMICO
+    # ------------------------------------------------------
+
+    mensaje = ""
+
+    if vencidos > 0:
+
+        mensaje += (
+            f"Favor gestionar con prioridad los "
+            f"<b>{vencidos}</b> pedidos que actualmente "
+            f"se encuentran en estado <b>VENCIDO</b>."
+        )
+
+    if alerta0 > 0:
+
+        if mensaje:
+
+            mensaje += "<br><br>"
+
+            texto_inicio = "Así mismo, dar celeridad a los"
+
+        else:
+
+            texto_inicio = "Favor gestionar con prioridad los"
+
+        mensaje += (
+            f"{texto_inicio} "
+            f"<b>{alerta0}</b> pedidos que se encuentran en "
+            f"<b>ALERTA 0 DÍAS</b>, con el fin de evitar su "
+            f"vencimiento."
+        )
+
+    if mensaje == "":
+
+        mensaje = (
+            "Actualmente no existen pedidos vencidos "
+            "ni pedidos en ALERTA 0 DÍAS. "
+            "Continuar con el seguimiento preventivo."
+        )
+
+    html = html.replace(
+        "{{MENSAJE}}",
+        mensaje,
+    )
+
+    return html
+        
