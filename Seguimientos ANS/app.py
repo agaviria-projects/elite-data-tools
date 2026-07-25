@@ -57,7 +57,7 @@ def main():
     # MOSTRAR MODELO DE CORREO
     # ------------------------------------------------------
 
-    for correo in correos[:1]:
+    for correo in correos:
 
         print("=" * 60)
         print(f"📧 {correo['grupo']}")

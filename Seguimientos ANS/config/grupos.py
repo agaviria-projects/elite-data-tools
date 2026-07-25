@@ -40,6 +40,8 @@ GRUPOS = {
 
                     "INPRE",
 
+                    "DIPRE",
+
                 ]
 
             },
