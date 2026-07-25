@@ -75,6 +75,13 @@ def generar_html(
         str(correo["total_pedidos"]),
     )
 
+    resumen = generar_resumen_ejecutivo(correo)
+
+    html = html.replace(
+        "{{RESUMEN_EJECUTIVO}}",
+        resumen,
+    )
+
     # En la primera versión aún no existen actividades
 
     actividades = generar_actividades(correo)
@@ -85,6 +92,103 @@ def generar_html(
     )
 
     return html
+# ==========================================================
+# RESUMEN EJECUTIVO
+# ==========================================================
+
+def generar_resumen_ejecutivo(correo):
+
+    vencidos = 0
+    alerta0 = 0
+    alerta = 0
+    tiempo = 0
+
+    for bloque in correo["bloques"]:
+
+        for actividad in bloque["actividades"]:
+
+            resumen = actividad["resumen"]
+
+            for _, fila in resumen.iterrows():
+
+                estado = str(fila["ESTADO"]).upper()
+
+                total = int(fila["TOTAL"])
+
+                if estado == "VENCIDO":
+                    vencidos += total
+
+                elif estado in ("ALERTA_0 DÍAS", "ALERTA_0 DIAS"):
+                    alerta0 += total
+
+                elif estado == "ALERTA":
+                    alerta += total
+
+                elif estado == "A TIEMPO":
+                    tiempo += total
+
+    return f"""
+    <div style="
+        margin:20px 0;
+        display:flex;
+        gap:15px;
+        font-family:Segoe UI;
+    ">
+
+        <div style="
+            flex:1;
+            background:#fee2e2;
+            padding:12px;
+            border-radius:8px;
+            text-align:center;
+        ">
+            <div style="font-size:26px;font-weight:bold;color:#991b1b;">
+                {vencidos}
+            </div>
+            <div>🔴 Vencidos</div>
+        </div>
+
+        <div style="
+            flex:1;
+            background:#fed7aa;
+            padding:12px;
+            border-radius:8px;
+            text-align:center;
+        ">
+            <div style="font-size:26px;font-weight:bold;color:#9a3412;">
+                {alerta0}
+            </div>
+            <div>🟠 Alerta 0 días</div>
+        </div>
+
+        <div style="
+            flex:1;
+            background:#fef3c7;
+            padding:12px;
+            border-radius:8px;
+            text-align:center;
+        ">
+            <div style="font-size:26px;font-weight:bold;color:#92400e;">
+                {alerta}
+            </div>
+            <div>🟡 Alerta</div>
+        </div>
+
+        <div style="
+            flex:1;
+            background:#d1fae5;
+            padding:12px;
+            border-radius:8px;
+            text-align:center;
+        ">
+            <div style="font-size:26px;font-weight:bold;color:#166534;">
+                {tiempo}
+            </div>
+            <div>🟢 A Tiempo</div>
+        </div>
+
+    </div>
+    """
 
 # ==========================================================
 # GENERAR ACTIVIDADES
