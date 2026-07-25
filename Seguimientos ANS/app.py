@@ -2,7 +2,7 @@ from src.validador import validar_archivo_fenix
 from src.lector_excel import leer_excel
 from src.agrupador import construir_informes
 from src.generador_correo import construir_correos
-
+from src.outlook import abrir_correo_outlook
 
 # ==========================================================
 # MAIN
@@ -57,7 +57,7 @@ def main():
     # MOSTRAR MODELO DE CORREO
     # ------------------------------------------------------
 
-    for correo in correos:
+    for correo in correos[:1]:
 
         print("=" * 60)
         print(f"📧 {correo['grupo']}")
@@ -85,6 +85,21 @@ def main():
                     f"   • {actividad['nombre']:<10}"
                     f"{actividad['total']:>6} pedidos"
                 )
+
+        # ==================================================
+        # GENERAR HTML
+        # ==================================================
+
+        html = generar_html(correo)
+
+        # ==================================================
+        # ABRIR OUTLOOK
+        # ==================================================
+
+        abrir_correo_outlook(
+            correo,
+            html,
+        )
 
         # --------------------------------------------------
         # GENERAR HTML

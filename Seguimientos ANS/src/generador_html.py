@@ -102,6 +102,13 @@ def generar_html(
 # ==========================================================
 
 def generar_resumen_ejecutivo(correo):
+    """
+    Genera cuatro KPIs ejecutivos compactos y compatibles
+    con Outlook Desktop.
+
+    La lógica de conteo se conserva.
+    Únicamente cambia la presentación visual.
+    """
 
     vencidos = 0
     alerta0 = 0
@@ -116,84 +123,443 @@ def generar_resumen_ejecutivo(correo):
 
             for _, fila in resumen.iterrows():
 
-                estado = str(fila["ESTADO"]).upper()
+                estado = (
+                    str(fila["ESTADO"])
+                    .strip()
+                    .upper()
+                    .replace("_", " ")
+                )
 
                 total = int(fila["TOTAL"])
 
                 if estado == "VENCIDO":
+
                     vencidos += total
 
-                elif estado in ("ALERTA_0 DÍAS", "ALERTA_0 DIAS"):
+                elif estado in (
+                    "ALERTA 0 DÍAS",
+                    "ALERTA 0 DIAS",
+                ):
+
                     alerta0 += total
 
                 elif estado == "ALERTA":
+
                     alerta += total
 
                 elif estado == "A TIEMPO":
+
                     tiempo += total
 
     return f"""
-    <div style="
-        margin:20px 0;
-        display:flex;
-        gap:15px;
-        font-family:Segoe UI;
-    ">
+    <table
+        role="presentation"
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            margin:10px 0 16px 0;
+            border-collapse:collapse;
+            font-family:Segoe UI, Arial, sans-serif;
+        "
+    >
+        <tr>
 
-        <div style="
-            flex:1;
-            background:#fee2e2;
-            padding:12px;
-            border-radius:8px;
-            text-align:center;
-        ">
-            <div style="font-size:26px;font-weight:bold;color:#991b1b;">
-                {vencidos}
-            </div>
-            <div>🔴 Vencidos</div>
-        </div>
+            <!-- KPI VENCIDOS -->
 
-        <div style="
-            flex:1;
-            background:#fed7aa;
-            padding:12px;
-            border-radius:8px;
-            text-align:center;
-        ">
-            <div style="font-size:26px;font-weight:bold;color:#9a3412;">
-                {alerta0}
-            </div>
-            <div>🟠 Alerta 0 días</div>
-        </div>
+            <td
+                width="25%"
+                valign="top"
+                style="
+                    width:25%;
+                    padding:0 5px 0 0;
+                "
+            >
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    bgcolor="#fff7f7"
+                    style="
+                        width:100%;
+                        background-color:#fff7f7;
+                        border:1px solid #f2c9cd;
+                        border-left:4px solid #dc2626;
+                        border-collapse:separate;
+                        border-radius:8px;
+                    "
+                >
+                    <tr>
+                        <td
+                            valign="middle"
+                            style="
+                                padding:10px 11px;
+                            "
+                        >
+                            <table
+                                role="presentation"
+                                width="100%"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%;
+                                    border-collapse:collapse;
+                                "
+                            >
+                                <tr>
+                                    <td
+                                        width="48"
+                                        valign="middle"
+                                        style="
+                                            width:48px;
+                                            color:#991b1b;
+                                            font-family:Segoe UI, Arial, sans-serif;
+                                            font-size:23px;
+                                            font-weight:700;
+                                            line-height:27px;
+                                        "
+                                    >
+                                        {vencidos}
+                                    </td>
 
-        <div style="
-            flex:1;
-            background:#fef3c7;
-            padding:12px;
-            border-radius:8px;
-            text-align:center;
-        ">
-            <div style="font-size:26px;font-weight:bold;color:#92400e;">
-                {alerta}
-            </div>
-            <div>🟡 Alerta</div>
-        </div>
+                                    <td
+                                        valign="middle"
+                                        style="
+                                            padding-left:8px;
+                                        "
+                                    >
+                                        <div
+                                            style="
+                                                color:#991b1b;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:11px;
+                                                font-weight:700;
+                                                line-height:15px;
+                                            "
+                                        >
+                                            VENCIDOS
+                                        </div>
 
-        <div style="
-            flex:1;
-            background:#d1fae5;
-            padding:12px;
-            border-radius:8px;
-            text-align:center;
-        ">
-            <div style="font-size:26px;font-weight:bold;color:#166534;">
-                {tiempo}
-            </div>
-            <div>🟢 A Tiempo</div>
-        </div>
+                                        <div
+                                            style="
+                                                margin-top:2px;
+                                                color:#7f1d1d;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:9px;
+                                                line-height:13px;
+                                            "
+                                        >
+                                            Prioridad máxima
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
 
-    </div>
+            <!-- KPI ALERTA 0 DÍAS -->
+
+            <td
+                width="25%"
+                valign="top"
+                style="
+                    width:25%;
+                    padding:0 5px;
+                "
+            >
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    bgcolor="#fff8f1"
+                    style="
+                        width:100%;
+                        background-color:#fff8f1;
+                        border:1px solid #f5d0ae;
+                        border-left:4px solid #f97316;
+                        border-collapse:separate;
+                        border-radius:8px;
+                    "
+                >
+                    <tr>
+                        <td
+                            valign="middle"
+                            style="
+                                padding:10px 11px;
+                            "
+                        >
+                            <table
+                                role="presentation"
+                                width="100%"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%;
+                                    border-collapse:collapse;
+                                "
+                            >
+                                <tr>
+                                    <td
+                                        width="48"
+                                        valign="middle"
+                                        style="
+                                            width:48px;
+                                            color:#9a3412;
+                                            font-family:Segoe UI, Arial, sans-serif;
+                                            font-size:23px;
+                                            font-weight:700;
+                                            line-height:27px;
+                                        "
+                                    >
+                                        {alerta0}
+                                    </td>
+
+                                    <td
+                                        valign="middle"
+                                        style="
+                                            padding-left:8px;
+                                        "
+                                    >
+                                        <div
+                                            style="
+                                                color:#9a3412;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:11px;
+                                                font-weight:700;
+                                                line-height:15px;
+                                            "
+                                        >
+                                            ALERTA 0 DÍAS
+                                        </div>
+
+                                        <div
+                                            style="
+                                                margin-top:2px;
+                                                color:#9a3412;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:9px;
+                                                line-height:13px;
+                                            "
+                                        >
+                                            Gestionar hoy
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+
+            <!-- KPI ALERTA -->
+
+            <td
+                width="25%"
+                valign="top"
+                style="
+                    width:25%;
+                    padding:0 5px;
+                "
+            >
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    bgcolor="#fffdf3"
+                    style="
+                        width:100%;
+                        background-color:#fffdf3;
+                        border:1px solid #f1df9d;
+                        border-left:4px solid #eab308;
+                        border-collapse:separate;
+                        border-radius:8px;
+                    "
+                >
+                    <tr>
+                        <td
+                            valign="middle"
+                            style="
+                                padding:10px 11px;
+                            "
+                        >
+                            <table
+                                role="presentation"
+                                width="100%"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%;
+                                    border-collapse:collapse;
+                                "
+                            >
+                                <tr>
+                                    <td
+                                        width="48"
+                                        valign="middle"
+                                        style="
+                                            width:48px;
+                                            color:#92400e;
+                                            font-family:Segoe UI, Arial, sans-serif;
+                                            font-size:23px;
+                                            font-weight:700;
+                                            line-height:27px;
+                                        "
+                                    >
+                                        {alerta}
+                                    </td>
+
+                                    <td
+                                        valign="middle"
+                                        style="
+                                            padding-left:8px;
+                                        "
+                                    >
+                                        <div
+                                            style="
+                                                color:#92400e;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:11px;
+                                                font-weight:700;
+                                                line-height:15px;
+                                            "
+                                        >
+                                            ALERTA
+                                        </div>
+
+                                        <div
+                                            style="
+                                                margin-top:2px;
+                                                color:#92400e;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:9px;
+                                                line-height:13px;
+                                            "
+                                        >
+                                            Revisar y acelerar
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+
+            <!-- KPI A TIEMPO -->
+
+            <td
+                width="25%"
+                valign="top"
+                style="
+                    width:25%;
+                    padding:0 0 0 5px;
+                "
+            >
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    bgcolor="#f4fcf7"
+                    style="
+                        width:100%;
+                        background-color:#f4fcf7;
+                        border:1px solid #bfe7cd;
+                        border-left:4px solid #22c55e;
+                        border-collapse:separate;
+                        border-radius:8px;
+                    "
+                >
+                    <tr>
+                        <td
+                            valign="middle"
+                            style="
+                                padding:10px 11px;
+                            "
+                        >
+                            <table
+                                role="presentation"
+                                width="100%"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%;
+                                    border-collapse:collapse;
+                                "
+                            >
+                                <tr>
+                                    <td
+                                        width="48"
+                                        valign="middle"
+                                        style="
+                                            width:48px;
+                                            color:#166534;
+                                            font-family:Segoe UI, Arial, sans-serif;
+                                            font-size:23px;
+                                            font-weight:700;
+                                            line-height:27px;
+                                        "
+                                    >
+                                        {tiempo}
+                                    </td>
+
+                                    <td
+                                        valign="middle"
+                                        style="
+                                            padding-left:8px;
+                                        "
+                                    >
+                                        <div
+                                            style="
+                                                color:#166534;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:11px;
+                                                font-weight:700;
+                                                line-height:15px;
+                                            "
+                                        >
+                                            A TIEMPO
+                                        </div>
+
+                                        <div
+                                            style="
+                                                margin-top:2px;
+                                                color:#166534;
+                                                font-family:Segoe UI, Arial, sans-serif;
+                                                font-size:9px;
+                                                line-height:13px;
+                                            "
+                                        >
+                                            Dentro del ANS
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+
+        </tr>
+    </table>
     """
+
+
 
 # ==========================================================
 # GENERAR ACTIVIDADES
@@ -229,10 +595,6 @@ def generar_actividades(
 
         for actividad in bloque["actividades"]:
 
-            # ------------------------------------------
-            # RESUMEN DE LA ACTIVIDAD
-            # ------------------------------------------
-
             resumen_html = generar_resumen(
                 actividad["resumen"]
             )
@@ -245,20 +607,20 @@ def generar_actividades(
             <div
                 style="
                     margin-left:25px;
-                    margin-bottom:25px;
+                    margin-bottom:35px;
                 ">
 
                 <h3
                     style="
                         color:#1565c0;
-                        margin-bottom:5px;
+                        margin-bottom:8px;
                     ">
 
-                    📋 {actividad['nombre']}
+                    📋 Actividad: {actividad['nombre']}
 
                 </h3>
 
-                <p>
+                <p style="margin:4px 0;">
 
                     <b>Total pedidos:</b>
 
@@ -268,9 +630,25 @@ def generar_actividades(
 
                 {resumen_html}
 
+                <hr style="
+                    border:none;
+                    border-top:1px solid #d1d5db;
+                    margin:18px 0;
+                ">
+
+                <h3 style="
+                    color:#0f766e;
+                    margin:0 0 12px 0;
+                    font-size:16px;
+                ">
+
+                    📋 Detalle de pedidos
+
+                </h3>
+
                 {tabla_html}
 
-                </div>
+            </div>
             """
 
     return html
@@ -283,161 +661,280 @@ def generar_resumen(
     resumen,
 ) -> str:
     """
-    Genera la tabla resumen por estado.
+    Genera una tabla resumen ejecutiva por estado.
+
+    Mejoras visuales:
+    - Mayor ancho.
+    - Tipografía más clara.
+    - Filas proporcionadas.
+    - Cantidades y porcentajes con mayor jerarquía.
+    - Compatible con Outlook Desktop.
     """
-
-    colores = {
-
-        "VENCIDO": "#dc2626",
-
-        "ALERTA_0 DÍAS": "#f97316",
-
-        "ALERTA": "#facc15",
-
-        "A TIEMPO": "#16a34a",
-
-    }
 
     html = """
     <table
+        role="presentation"
+        width="420"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
         style="
             width:420px;
+            max-width:420px;
+            margin:12px 0 20px 0;
             border-collapse:collapse;
-            margin-top:10px;
-            margin-bottom:20px;
-            font-size:13px;
-        ">
-    """
-
-    html += """
+            font-family:Segoe UI, Arial, sans-serif;
+            font-size:12px;
+            color:#1f2937;
+        "
+    >
         <tr
+            bgcolor="#0f766e"
             style="
-                background:#0f766e;
-                color:white;
-            ">
+                background-color:#0f766e;
+                color:#ffffff;
+            "
+        >
+            <th
+                width="50%"
+                height="36"
+                style="
+                    width:50%;
+                    height:36px;
+                    padding:0 12px;
+                    border:1px solid #0b625c;
+                    text-align:center;
+                    vertical-align:middle;
+                    color:#ffffff;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:11px;
+                    font-weight:700;
+                    line-height:16px;
+                    mso-line-height-rule:exactly;
+                "
+            >
+                Estado
+            </th>
 
-            <th style="padding:8px;">Estado</th>
+            <th
+                width="25%"
+                height="36"
+                style="
+                    width:25%;
+                    height:36px;
+                    padding:0 10px;
+                    border:1px solid #0b625c;
+                    text-align:center;
+                    vertical-align:middle;
+                    color:#ffffff;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:11px;
+                    font-weight:700;
+                    line-height:16px;
+                    mso-line-height-rule:exactly;
+                "
+            >
+                Cantidad
+            </th>
 
-            <th style="padding:8px;">Cantidad</th>
-
-            <th style="padding:8px;">%</th>
-
+            <th
+                width="25%"
+                height="36"
+                style="
+                    width:25%;
+                    height:36px;
+                    padding:0 10px;
+                    border:1px solid #0b625c;
+                    text-align:center;
+                    vertical-align:middle;
+                    color:#ffffff;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:11px;
+                    font-weight:700;
+                    line-height:16px;
+                    mso-line-height-rule:exactly;
+                "
+            >
+                Porcentaje
+            </th>
         </tr>
     """
 
-    for _, fila in resumen.iterrows():
+    for indice, (_, fila) in enumerate(
+        resumen.iterrows()
+    ):
 
-        estado = fila["ESTADO"]
+        estado = (
+            str(fila["ESTADO"])
+            .strip()
+            .upper()
+            .replace("_", " ")
+        )
 
-        color = colores.get(
-            estado,
-            "#6b7280"
+        color_fila = (
+            "#ffffff"
+            if indice % 2 == 0
+            else "#f8fafc"
         )
 
         html += f"""
-
-        <tr>
-
+        <tr
+            bgcolor="{color_fila}"
+            style="
+                background-color:{color_fila};
+            "
+        >
             <td
+                height="38"
+                align="center"
+                valign="middle"
                 style="
-                    padding:6px;
-                    border:1px solid #ddd;
+                    height:38px;
+                    padding:0 10px;
+                    border:1px solid #d9dee5;
                     text-align:center;
-                ">
-
-                {badge_estado(str(estado))}
-
+                    vertical-align:middle;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:11px;
+                    line-height:15px;
+                    mso-line-height-rule:exactly;
+                "
+            >
+                {badge_estado(estado)}
             </td>
 
             <td
+                height="38"
                 align="center"
-                style="border:1px solid #ddd;">
-
+                valign="middle"
+                style="
+                    height:38px;
+                    padding:0 10px;
+                    border:1px solid #d9dee5;
+                    text-align:center;
+                    vertical-align:middle;
+                    color:#111827;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:13px;
+                    font-weight:700;
+                    line-height:16px;
+                    mso-line-height-rule:exactly;
+                "
+            >
                 {fila['TOTAL']}
-
             </td>
 
             <td
+                height="38"
                 align="center"
-                style="border:1px solid #ddd;">
-
+                valign="middle"
+                style="
+                    height:38px;
+                    padding:0 10px;
+                    border:1px solid #d9dee5;
+                    text-align:center;
+                    vertical-align:middle;
+                    color:#334155;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:12px;
+                    font-weight:600;
+                    line-height:16px;
+                    mso-line-height-rule:exactly;
+                "
+            >
                 {fila['PORCENTAJE']}%
-
             </td>
-
         </tr>
-
         """
 
-    html += "</table>"
+    html += """
+    </table>
+    """
 
     return html
 
+
+
 # ==========================================================
-# BADGE ESTADO
+# FORMATO ESTADO
 # ==========================================================
 
 def badge_estado(estado: str) -> str:
     """
-    Devuelve una etiqueta HTML coloreada según el estado.
+    Devuelve un badge compacto, elegante y compatible
+    con Outlook.
+
+    No utiliza tablas anidadas para evitar aumentar
+    innecesariamente la altura de las filas.
     """
 
-    estado = estado.strip().upper()
+    estado = (
+        estado
+        .strip()
+        .upper()
+        .replace("_", " ")
+    )
 
-    texto_mostrar = estado.replace("_", " ")
-
-    colores = {
-
-        "A TIEMPO": (
-            "#d1fae5",
-            "#166534",
-        ),
-
-        "ALERTA": (
-            "#fef3c7",
-            "#92400e",
-        ),
-
-        "ALERTA_0 DÍAS": (
-            "#fed7aa",
-            "#9a3412",
-        ),
-
-        "ALERTA_0 DIAS": (
-            "#fed7aa",
-            "#9a3412",
-        ),
-
-        "VENCIDO": (
-            "#fee2e2",
-            "#991b1b",
-        ),
-
+    estilos = {
+        "VENCIDO": {
+            "fondo": "#fee2e2",
+            "borde": "#fecaca",
+            "texto": "#b91c1c",
+        },
+        "ALERTA 0 DÍAS": {
+            "fondo": "#ffedd5",
+            "borde": "#fed7aa",
+            "texto": "#c2410c",
+        },
+        "ALERTA 0 DIAS": {
+            "fondo": "#ffedd5",
+            "borde": "#fed7aa",
+            "texto": "#c2410c",
+        },
+        "ALERTA": {
+            "fondo": "#fef3c7",
+            "borde": "#fde68a",
+            "texto": "#a16207",
+        },
+        "A TIEMPO": {
+            "fondo": "#dcfce7",
+            "borde": "#bbf7d0",
+            "texto": "#15803d",
+        },
     }
 
-    fondo, texto = colores.get(
+    estilo = estilos.get(
         estado,
-        ("#f3f4f6", "#374151")
+        {
+            "fondo": "#f1f5f9",
+            "borde": "#e2e8f0",
+            "texto": "#475569",
+        },
     )
 
     return f"""
     <span
         style="
             display:inline-block;
-            min-width:120px;
-            text-align:center;
-            background:{fondo};
-            color:{texto};
-            padding:6px 12px;
-            border-radius:14px;
+            min-width:82px;
+            padding:3px 9px;
+            background-color:{estilo['fondo']};
+            border:1px solid {estilo['borde']};
+            border-radius:12px;
+            color:{estilo['texto']};
+            font-family:Segoe UI, Arial, sans-serif;
+            font-size:9px;
             font-weight:700;
-            font-size:12px;
+            line-height:12px;
+            text-align:center;
             white-space:nowrap;
-            box-sizing:border-box;
-        ">
-        {texto_mostrar}
+        "
+    >
+        {estado}
     </span>
     """
+
+
 
 # ==========================================================
 # GENERAR TABLA
@@ -445,65 +942,82 @@ def badge_estado(estado: str) -> str:
 
 def generar_tabla(df) -> str:
     """
-    Genera una tabla HTML manteniendo exactamente
+    Genera la tabla HTML manteniendo exactamente
     las columnas y el orden del DataFrame.
+
+    Mejoras visuales:
+    - Filas más compactas.
+    - Altura controlada para Outlook.
+    - Tipografía más clara.
+    - Encabezado corporativo.
+    - Estados en badges compactos.
     """
 
     html = """
     <table
+        role="presentation"
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
         style="
             width:100%;
             border-collapse:collapse;
-            margin-top:15px;
-            margin-bottom:30px;
-            font-size:12px;
+            margin-top:10px;
+            margin-bottom:24px;
+            table-layout:auto;
+            color:#1f2937;
             font-family:Segoe UI, Arial, sans-serif;
-        ">
+            font-size:10px;
+        "
+    >
     """
+
     # ======================================================
     # ENCABEZADO
     # ======================================================
 
     html += """
-    <tr style="
-        background:#0f766e;
-        color:white;
-    ">
+    <tr
+        bgcolor="#0f766e"
+        style="
+            background-color:#0f766e;
+            color:#ffffff;
+        "
+    >
     """
 
     for columna in df.columns:
 
         html += f"""
         <th
+            height="34"
+            valign="middle"
             style="
-                padding:8px;
-                border:1px solid #d1d5db;
+                height:34px;
+                padding:0 6px;
+                border:1px solid #d5dde5;
+                background-color:#0f766e;
+                color:#ffffff;
                 text-align:center;
+                vertical-align:middle;
                 white-space:nowrap;
-            ">
-
+                font-family:Segoe UI, Arial, sans-serif;
+                font-size:9px;
+                font-weight:700;
+                line-height:13px;
+                mso-line-height-rule:exactly;
+            "
+        >
             {columna}
-
         </th>
         """
 
     html += "</tr>"
+
     # ======================================================
     # ORDEN OPERATIVO
     # ======================================================
-
-    orden_estados = {
-
-        "VENCIDO": 1,
-
-        "ALERTA_0 DÍAS": 2,
-        "ALERTA_0 DIAS": 2,
-
-        "ALERTA": 3,
-
-        "A TIEMPO": 4,
-
-    }
 
     df = df.copy()
 
@@ -524,38 +1038,41 @@ def generar_tabla(df) -> str:
     )
 
     df = df.sort_values(
-
         by=[
-
             "ORDEN_ESTADO",
-
             "DIAS_RESTANTES",
-
         ],
-
         ascending=[
-
             True,
-
             True,
-
-        ]
-
+        ],
     )
 
     df = df.drop(
         columns="ORDEN_ESTADO"
     )
+
     # ======================================================
     # FILAS
     # ======================================================
 
-    for i, (_, fila) in enumerate(df.iterrows()):
+    for indice, (_, fila) in enumerate(
+        df.iterrows()
+    ):
 
-        color_fila = "#ffffff" if i % 2 == 0 else "#f8fafc"
+        color_fila = (
+            "#ffffff"
+            if indice % 2 == 0
+            else "#f8fafc"
+        )
 
         html += f"""
-        <tr style="background:{color_fila};">
+        <tr
+            bgcolor="{color_fila}"
+            style="
+                background-color:{color_fila};
+            "
+        >
         """
 
         for columna in df.columns:
@@ -563,33 +1080,106 @@ def generar_tabla(df) -> str:
             valor = fila[columna]
 
             if valor is None:
+
                 valor = ""
 
             else:
+
                 valor = str(valor)
+
+            # ----------------------------------------------
+            # ESTADO
+            # ----------------------------------------------
 
             if columna == "ESTADO":
 
-                valor = badge_estado(str(valor))
+                valor = badge_estado(valor)
+
+            # ----------------------------------------------
+            # ALINEACIÓN
+            # ----------------------------------------------
+
+            alineacion = "left"
+
+            if columna in [
+                "PEDIDO",
+                "MUNICIPIO",
+                "TIPO_DIRECCION",
+                "CONCEPTO",
+                "ACTIVIDAD",
+                "PRODUCTO_ID",
+                "DIAS_PACTADOS",
+                "DIAS_RESTANTES",
+                "ESTADO",
+            ]:
+
+                alineacion = "center"
+
+            # ----------------------------------------------
+            # ESTILO POR COLUMNA
+            # ----------------------------------------------
+
+            if columna == "DIRECCION":
+
+                estilo_extra = """
+                    white-space:normal;
+                    word-break:break-word;
+                    max-width:230px;
+                """
+
+            elif columna in [
+                "FECHA_INICIO_ANS",
+                "FECHA_LIMITE_ANS",
+            ]:
+
+                estilo_extra = """
+                    white-space:nowrap;
+                    min-width:112px;
+                """
+
+            else:
+
+                estilo_extra = """
+                    white-space:nowrap;
+                """
+
+            # ----------------------------------------------
+            # CELDA
+            # ----------------------------------------------
 
             html += f"""
             <td
+                height="30"
+                valign="middle"
                 style="
-                    padding:6px;
-                    border:1px solid #e5e7eb;
-                    vertical-align:top;
-                ">
-
+                    height:30px;
+                    padding:3px 6px;
+                    border:1px solid #e2e8f0;
+                    vertical-align:middle;
+                    text-align:{alineacion};
+                    color:#1f2937;
+                    font-family:Segoe UI, Arial, sans-serif;
+                    font-size:10px;
+                    font-weight:400;
+                    line-height:14px;
+                    mso-line-height-rule:exactly;
+                    {estilo_extra}
+                "
+            >
                 {valor}
-
             </td>
             """
 
         html += "</tr>"
 
-    html += "</table>"
+    html += """
+    </table>
+    """
 
     return html
+
+
+
 # ==========================================================
 # LEER FOOTER
 # ==========================================================
