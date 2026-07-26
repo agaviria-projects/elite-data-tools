@@ -76,6 +76,7 @@ def crear_seguimiento_ans(panel) -> None:
     vista = crear_vista(panel)
 
     controller = InformeAnsController()
+
     # ======================================================
     # ENCABEZADO
     # ======================================================
