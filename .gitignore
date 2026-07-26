@@ -77,3 +77,25 @@ Control_ANS_v5/data_clean/FENIX_ANS.xlsx
 Control_ANS_v5/data_clean/FENIX_ANS_EPM.xlsx
 Control_ANS_v5/data_clean/FENIX_CLEAN.xlsx
 Control_ANS_v5/data_raw/correcciones_fenix_ans.xlsx
+
+# ======================================
+# SEGUIMIENTO ANS
+# ======================================
+
+# HTML generados automáticamente
+modules/informe_ans/salida/html/*.html
+
+# Archivos Excel generados
+modules/informe_ans/salida/excel/*.xlsx
+
+# Correos exportados (si los generas)
+modules/informe_ans/salida/correos/*
+
+# Logs del módulo
+modules/informe_ans/log/*
+
+# Histórico generado automáticamente (opcional)
+# modules/informe_ans/data/historico/*
+
+# Archivos procesados (opcional)
+# modules/informe_ans/procesados/*
