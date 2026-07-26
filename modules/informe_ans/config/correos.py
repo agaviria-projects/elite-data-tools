@@ -1,9 +1,16 @@
 # ==========================================================
-# MODO DE ENVÍO
+# MODO DE DESTINATARIOS
 # ==========================================================
 
-# True  -> Abre Outlook para revisar el correo.
-# False -> Envía automáticamente.
+# True:
+# Usa DESTINATARIOS_PRUEBA y COPIA_PRUEBA en Pruebas.
+#
+# False:
+# Usa DESTINATARIOS y COPIAS según cada grupo en Producción.
+#
+# IMPORTANTE:
+# Esta variable controla únicamente los destinatarios.
+# DataSuite controla si Outlook abre o envía el correo.
 
 MODO_PRUEBA = True
 
@@ -30,19 +37,28 @@ COPIA_PRUEBA = [
 DESTINATARIOS = {
 
     "PUNTOS DE CONEXIÓN": [
-
+        "c.oliveros@eliteingenieros.com.co",
+        "g.gaviria@eliteingenieros.com.co",
+        "j.arroyave@eliteingenieros.com.co",
+        "y.sepulveda@eliteingenieros.com.co",
+        "juan.ramirez@eliteingenieros.com.co",
     ],
 
     "PREPAGO_HV_ARTER": [
-
+        "l.perez@eliteingenieros.com.co",
+        "a.villegas@eliteingenieros.com.co",
+        ""
     ],
 
     "MOVIMIENTO DE REDES": [
-
+        "dairo.gil@eliteingenieros.com.co",
+        "a.castano@eliteingenieros.com.co",
+        "c.oliveros@eliteingenieros.com.co",
     ],
 
     "PARTICULARES": [
-
+        "f.marin@eliteingenieros.com.co",
+        "l.toro@eliteingenieros.com.co",
     ],
 
 }
@@ -55,19 +71,27 @@ DESTINATARIOS = {
 COPIAS = {
 
     "PUNTOS DE CONEXIÓN": [
-
+        "j.barbosa@eliteingenieros.com.co",
+        "d.leon@eliteingenieros.com.co",
     ],
 
     "PREPAGO_HV_ARTER": [
-
+        "c.oliveros@eliteingenieros.com.co",
+        "j.barbosa@eliteingenieros.com.co",
+        "d.leon@eliteingenieros.com.co",
     ],
 
     "MOVIMIENTO DE REDES": [
-
+        "j.barbosa@eliteingenieros.com.co",
+        "f.marin@eliteingenieros.com.co",
+        "r.bedoya@eliteingenieros.com.co",
+        "d.leon@eliteingenieros.com.co",
     ],
 
     "PARTICULARES": [
-
+        "c.oliveros@eliteingenieros.com.co",
+        "j.barbosa@eliteingenieros.com.co",
+        "d.leon@eliteingenieros.com.co",
     ],
 
 }
