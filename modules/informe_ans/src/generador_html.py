@@ -859,14 +859,7 @@ def generar_resumen(
 # FORMATO ESTADO
 # ==========================================================
 
-def badge_estado(estado: str) -> str:
-    """
-    Devuelve un badge compacto, elegante y compatible
-    con Outlook.
-
-    No utiliza tablas anidadas para evitar aumentar
-    innecesariamente la altura de las filas.
-    """
+def badge_estado(estado: str):
 
     estado = (
         estado
@@ -876,64 +869,103 @@ def badge_estado(estado: str) -> str:
     )
 
     estilos = {
+
         "VENCIDO": {
-            "fondo": "#fee2e2",
-            "borde": "#fecaca",
-            "texto": "#b91c1c",
+            "fondo": "#DC2626",
+            "borde": "#991B1B",
+            "texto": "#FFFFFF",
         },
+
         "ALERTA 0 DÍAS": {
-            "fondo": "#ffedd5",
-            "borde": "#fed7aa",
-            "texto": "#c2410c",
+            "fondo": "#F97316",
+            "borde": "#C2410C",
+            "texto": "#FFFFFF",
         },
+
         "ALERTA 0 DIAS": {
-            "fondo": "#ffedd5",
-            "borde": "#fed7aa",
-            "texto": "#c2410c",
+            "fondo": "#F97316",
+            "borde": "#C2410C",
+            "texto": "#FFFFFF",
         },
+
         "ALERTA": {
-            "fondo": "#fef3c7",
-            "borde": "#fde68a",
-            "texto": "#a16207",
+            "fondo": "#FACC15",
+            "borde": "#CA8A04",
+            "texto": "#3F2B00",
         },
+
         "A TIEMPO": {
-            "fondo": "#dcfce7",
-            "borde": "#bbf7d0",
-            "texto": "#15803d",
+            "fondo": "#22C55E",
+            "borde": "#15803D",
+            "texto": "#FFFFFF",
         },
+
     }
 
     estilo = estilos.get(
         estado,
         {
-            "fondo": "#f1f5f9",
-            "borde": "#e2e8f0",
-            "texto": "#475569",
+            "fondo": "#64748B",
+            "borde": "#475569",
+            "texto": "#FFFFFF",
         },
     )
 
     return f"""
-    <span
-        style="
-            display:inline-block;
-            min-width:82px;
-            padding:3px 9px;
-            background-color:{estilo['fondo']};
-            border:1px solid {estilo['borde']};
-            border-radius:12px;
-            color:{estilo['texto']};
-            font-family:Segoe UI, Arial, sans-serif;
-            font-size:9px;
-            font-weight:700;
-            line-height:12px;
-            text-align:center;
-            white-space:nowrap;
-        "
-    >
-        {estado}
-    </span>
-    """
+<table
+    role="presentation"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    align="center"
+    style="
+        margin:auto;
+        border-collapse:separate;
+    "
+>
+<tr>
 
+<td
+    bgcolor="{estilo['fondo']}"
+    align="center"
+    valign="middle"
+    style="
+        background:{estilo['fondo']};
+        border:1px solid {estilo['borde']};
+
+        padding:4px 12px;
+
+        min-width:88px;
+
+        color:{estilo['texto']};
+
+        font-family:'Segoe UI',Arial,sans-serif;
+
+        font-size:10px;
+
+        font-weight:700;
+
+        letter-spacing:.3px;
+
+        text-transform:uppercase;
+
+        text-align:center;
+
+        white-space:nowrap;
+
+        mso-line-height-rule:exactly;
+
+        line-height:14px;
+    "
+>
+
+{estado}
+
+</td>
+
+</tr>
+</table>
+"""
 
 
 # ==========================================================
