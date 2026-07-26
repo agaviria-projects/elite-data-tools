@@ -45,7 +45,10 @@ def configurar_destinatarios(
     correo,
 ):
     """
-    Configura TO y CC.
+    Configura los destinatarios principales y las copias.
+
+    MODO_PRUEBA determina únicamente a quién se dirige
+    el mensaje. No controla si el correo se abre o se envía.
     """
 
     if MODO_PRUEBA:
@@ -87,8 +90,7 @@ def configurar_mensaje(
     html,
 ):
     """
-    Configura asunto,
-    importancia y cuerpo HTML.
+    Configura asunto, importancia y cuerpo HTML.
     """
 
     mail.Subject = correo["asunto"]
@@ -104,32 +106,41 @@ def configurar_mensaje(
 
 def finalizar_envio(
     mail,
+    enviar_automaticamente=False,
 ):
     """
-    Muestra el correo en Outlook
-    o lo envía automáticamente.
+    Abre el correo para revisión o lo envía directamente.
+
+    enviar_automaticamente=False:
+        Abre el mensaje en Outlook mediante Display().
+
+    enviar_automaticamente=True:
+        Envía el mensaje directamente mediante Send().
     """
 
-    if MODO_PRUEBA:
-
-        mail.Display()
-
-    else:
+    if enviar_automaticamente:
 
         mail.Send()
 
+    else:
+
+        mail.Display()
+
 
 # ==========================================================
-# ABRIR CORREO
+# PROCESAR CORREO OUTLOOK
 # ==========================================================
 
 def abrir_correo_outlook(
     correo,
     html,
+    enviar_automaticamente=False,
 ):
     """
-    Construye completamente
-    el correo de Outlook.
+    Construye completamente el correo de Outlook.
+
+    El parámetro enviar_automaticamente permite utilizar
+    la misma función para los dos modos de DataSuite.
     """
 
     outlook = crear_outlook()
@@ -150,5 +161,6 @@ def abrir_correo_outlook(
     )
 
     finalizar_envio(
-        mail
+        mail,
+        enviar_automaticamente=enviar_automaticamente,
     )

@@ -34,10 +34,7 @@ class InformeAnsController:
             modo_prueba=modo_prueba,
             solo_primer_correo=solo_primer_correo,
             abrir_outlook=abrir_outlook,
-            enviar_automaticamente=(
-                enviar_automaticamente
-                and not modo_prueba
-            ),
+            enviar_automaticamente=enviar_automaticamente,
         )
 
         resultado = ejecutar_informe_ans(

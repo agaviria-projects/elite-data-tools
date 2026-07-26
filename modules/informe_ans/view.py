@@ -1,11 +1,17 @@
+import threading
+from tkinter import messagebox
+
+import pythoncom
 import ttkbootstrap as ttk
 
 from ui.base_view import crear_vista
 
+from modules.informe_ans.config.correos import MODO_PRUEBA
 from modules.informe_ans.config.parametros import (
     ARCHIVO_FENIX,
     CARPETA_HTML,
 )
+from modules.informe_ans.controller import InformeAnsController
 from modules.informe_ans.src.generador_html import (
     PLANTILLA_CORREO,
     PLANTILLA_FOOTER,
@@ -69,6 +75,7 @@ def crear_seguimiento_ans(panel) -> None:
 
     vista = crear_vista(panel)
 
+    controller = InformeAnsController()
     # ======================================================
     # ENCABEZADO
     # ======================================================
@@ -317,3 +324,268 @@ def crear_seguimiento_ans(panel) -> None:
 
     vista.txt_consola = txt_consola
     vista.boton_generar = boton_generar
+
+    # ======================================================
+    # FUNCIONES DE CONSOLA
+    # ======================================================
+
+    def escribir_consola(mensaje: str) -> None:
+        """
+        Escribe mensajes en la consola desde el hilo principal.
+        """
+
+        def actualizar():
+            txt_consola.insert(
+                "end",
+                mensaje + "\n",
+            )
+
+            txt_consola.see("end")
+
+        vista.after(
+            0,
+            actualizar,
+        )
+
+    def limpiar_consola() -> None:
+        txt_consola.delete(
+            "1.0",
+            "end",
+        )
+
+    # ======================================================
+    # FINALIZAR EJECUCIÓN
+    # ======================================================
+
+    def finalizar_ejecucion(resultado) -> None:
+        """
+        Restaura la interfaz después de una ejecución correcta.
+        """
+
+        boton_generar.configure(
+            state="normal",
+        )
+
+        escribir_consola("")
+        escribir_consola("=" * 60)
+        escribir_consola("RESUMEN FINAL")
+        escribir_consola("=" * 60)
+
+        escribir_consola(
+            f"✔ Correos generados : "
+            f"{resultado.correos_generados}"
+        )
+
+        escribir_consola(
+            f"✔ Total grupos      : "
+            f"{resultado.total_grupos}"
+        )
+
+        escribir_consola(
+            f"✔ Total pedidos     : "
+            f"{resultado.total_pedidos:,}"
+        )
+
+        escribir_consola(
+            f"✔ Tiempo ejecución  : "
+            f"{resultado.tiempo_segundos:.2f} segundos"
+        )
+
+        escribir_consola(
+            f"✔ Ruta de salida    : "
+            f"{resultado.ruta_salida}"
+        )
+
+        vista.after(
+            0,
+            lambda: messagebox.showinfo(
+                "Seguimiento ANS",
+                (
+                    "El proceso finalizó correctamente.\n\n"
+                    f"Correos generados: "
+                    f"{resultado.correos_generados}\n"
+                    f"Total pedidos: "
+                    f"{resultado.total_pedidos:,}"
+                ),
+            ),
+        )
+
+    # ======================================================
+    # MANEJAR ERROR
+    # ======================================================
+
+    def manejar_error(error: Exception) -> None:
+        """
+        Restaura la interfaz y muestra el error ocurrido.
+        """
+
+        escribir_consola("")
+        escribir_consola(
+            f"❌ ERROR: {error}"
+        )
+
+        vista.after(
+            0,
+            lambda: boton_generar.configure(
+                state="normal",
+            ),
+        )
+
+        vista.after(
+            0,
+            lambda: messagebox.showerror(
+                "Error en Seguimiento ANS",
+                str(error),
+            ),
+        )
+
+    # ======================================================
+    # EJECUTAR EN SEGUNDO PLANO
+    # ======================================================
+
+    def ejecutar_proceso(
+        enviar_automaticamente: bool,
+        procesar_solo_primero: bool,
+    ) -> None:
+        """
+        Ejecuta el controlador sin bloquear DataSuite.
+
+        Inicializa COM dentro del hilo para permitir
+        la comunicación con Outlook.
+        """
+
+        pythoncom.CoInitialize()
+
+        try:
+            resultado = controller.ejecutar(
+                archivo_fenix=ARCHIVO_FENIX,
+                modo_prueba=MODO_PRUEBA,
+                solo_primer_correo=procesar_solo_primero,
+                abrir_outlook=True,
+                enviar_automaticamente=enviar_automaticamente,
+                informar=escribir_consola,
+            )
+
+            vista.after(
+                0,
+                lambda: finalizar_ejecucion(
+                    resultado
+                ),
+            )
+
+        except Exception as error:
+            manejar_error(error)
+
+        finally:
+            pythoncom.CoUninitialize()
+
+    # ======================================================
+    # INICIAR EJECUCIÓN
+    # ======================================================
+
+    def iniciar_ejecucion() -> None:
+        """
+        Valida el modo seleccionado e inicia el proceso.
+        """
+
+        if not ARCHIVO_FENIX.exists():
+            messagebox.showerror(
+                "Archivo no encontrado",
+                (
+                    "No se encontró el archivo FENIX:\n\n"
+                    f"{ARCHIVO_FENIX}"
+                ),
+            )
+            return
+
+        modo_seleccionado = (
+            modo_ejecucion.get()
+        )
+
+        enviar_automaticamente = (
+            modo_seleccionado
+            == "Envío automático"
+        )
+
+        if enviar_automaticamente:
+            cantidad = (
+                "1 correo"
+                if solo_primer_correo.get()
+                else "4 correos"
+            )
+
+            destino = (
+                "destinatarios de prueba"
+                if MODO_PRUEBA
+                else "destinatarios de producción"
+            )
+
+            confirmar = messagebox.askyesno(
+                "Confirmar envío automático",
+                (
+                    f"Se enviarán automáticamente "
+                    f"{cantidad}.\n\n"
+                    f"Destino: {destino}.\n\n"
+                    "Los mensajes no se abrirán para "
+                    "revisión manual.\n\n"
+                    "¿Desea continuar?"
+                ),
+                icon="warning",
+            )
+
+            if not confirmar:
+                return
+
+        limpiar_consola()
+
+        if MODO_PRUEBA:
+            escribir_consola(
+                "🧪 Destinatarios: PRUEBA"
+            )
+        else:
+            escribir_consola(
+                "⚠ Destinatarios: PRODUCCIÓN"
+            )
+
+        escribir_consola(
+            f"📌 Modo de ejecución: "
+            f"{modo_seleccionado}"
+        )
+
+        escribir_consola(
+            "📨 Correos a procesar: "
+            + (
+                "solo el primero"
+                if solo_primer_correo.get()
+                else "todos los grupos"
+            )
+        )
+
+        escribir_consola("")
+
+        boton_generar.configure(
+            state="disabled",
+        )
+
+        procesar_solo_primero = (
+            solo_primer_correo.get()
+        )
+
+        hilo = threading.Thread(
+            target=ejecutar_proceso,
+            args=(
+                enviar_automaticamente,
+                procesar_solo_primero,
+            ),
+            daemon=True,
+        )
+
+        hilo.start()
+
+    # ======================================================
+    # CONECTAR BOTÓN
+    # ======================================================
+
+    boton_generar.configure(
+        command=iniciar_ejecucion,
+    )

@@ -114,18 +114,38 @@ def ejecutar_informe_ans(
         )
 
         if configuracion.abrir_outlook:
-            informar(
-                "📬 Creando correo para revisión en Outlook..."
-            )
+
+            if configuracion.enviar_automaticamente:
+
+                informar(
+                    "📤 Enviando correo automáticamente desde Outlook..."
+                )
+
+            else:
+
+                informar(
+                    "📬 Creando correo para revisión en Outlook..."
+                )
 
             abrir_correo_outlook(
                 correo,
                 html,
+                enviar_automaticamente=(
+                    configuracion.enviar_automaticamente
+                ),
             )
 
-            informar(
-                "✅ Correo abierto en Outlook."
-            )
+            if configuracion.enviar_automaticamente:
+
+                informar(
+                    "✅ Correo enviado automáticamente."
+                )
+
+            else:
+
+                informar(
+                    "✅ Correo abierto en Outlook para revisión."
+                )
 
         total_pedidos += pedidos_grupo
         correos_generados += 1
