@@ -923,50 +923,47 @@ def badge_estado(estado: str):
         border-collapse:separate;
     "
 >
-<tr>
+    <tr>
 
-<td
-    bgcolor="{estilo['fondo']}"
-    align="center"
-    valign="middle"
-    style="
-        background:{estilo['fondo']};
-        border:1px solid {estilo['borde']};
+        <td
+            bgcolor="{estilo['fondo']}"
+            align="center"
+            valign="middle"
+            style="
+                background-color:{estilo['fondo']};
 
-        padding:4px 12px;
+                border-top:1px solid {estilo['borde']};
+                border-left:1px solid {estilo['borde']};
+                border-right:1px solid {estilo['borde']};
+                border-bottom:none;
 
-        min-width:88px;
+                padding:5px 12px;
 
-        color:{estilo['texto']};
+                min-width:88px;
 
-        font-family:'Segoe UI',Arial,sans-serif;
+                color:{estilo['texto']};
 
-        font-size:10px;
+                font-family:'Segoe UI', Arial, sans-serif;
 
-        font-weight:700;
+                font-size:10px;
 
-        letter-spacing:.3px;
+                font-weight:700;
 
-        text-transform:uppercase;
+                text-align:center;
 
-        text-align:center;
+                white-space:nowrap;
 
-        white-space:nowrap;
+                line-height:12px;
 
-        mso-line-height-rule:exactly;
+                mso-line-height-rule:exactly;
+            "
+        >
+            {estado}
+        </td>
 
-        line-height:14px;
-    "
->
-
-{estado}
-
-</td>
-
-</tr>
+    </tr>
 </table>
 """
-
 
 # ==========================================================
 # GENERAR TABLA
