@@ -21,12 +21,12 @@ MODO_PRUEBA = False
 
 DESTINATARIOS_PRUEBA = [
 
-    "d.leon@eliteingenieros.com.co",
+    "h.gaviria@eliteingenieros.com.co",
 
 ]
 
 COPIA_PRUEBA = [
-    "h.gaviria@eliteingenieros.com.co"
+    
 ]
 
 

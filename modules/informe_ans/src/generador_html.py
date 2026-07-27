@@ -759,7 +759,34 @@ def generar_resumen(
             </th>
         </tr>
     """
+    # ======================================================
+    # ORDEN OPERATIVO DE LOS ESTADOS
+    # ======================================================
 
+    resumen = resumen.copy()
+
+    resumen["ORDEN_ESTADO"] = (
+        resumen["ESTADO"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .str.replace("_", " ", regex=False)
+        .map({
+            "VENCIDO": 1,
+            "ALERTA 0 DÍAS": 2,
+            "ALERTA 0 DIAS": 2,
+            "ALERTA": 3,
+            "A TIEMPO": 4,
+        })
+        .fillna(99)
+    )
+
+    resumen = (
+        resumen
+        .sort_values("ORDEN_ESTADO")
+        .drop(columns="ORDEN_ESTADO")
+    )
+    
     for indice, (_, fila) in enumerate(
         resumen.iterrows()
     ):
