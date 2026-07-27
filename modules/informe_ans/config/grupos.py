@@ -28,7 +28,7 @@ GRUPOS = {
 
                 "producto": [
 
-                    "ENEPRE"
+                    "ENEPRE",
 
                 ],
 
@@ -56,7 +56,9 @@ GRUPOS = {
 
                 "actividades": [
 
-                    "ARTER"
+                    "ARTER",
+                    
+                    "AEJDO",
 
                 ]
 
@@ -101,6 +103,7 @@ GRUPOS = {
                     "ENERES",
 
                     "ENENOR",
+
 
                 ],
 

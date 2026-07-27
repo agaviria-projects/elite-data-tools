@@ -12,7 +12,7 @@
 # Esta variable controla únicamente los destinatarios.
 # DataSuite controla si Outlook abre o envía el correo.
 
-MODO_PRUEBA = True
+MODO_PRUEBA = False
 
 
 # ==========================================================
@@ -21,12 +21,12 @@ MODO_PRUEBA = True
 
 DESTINATARIOS_PRUEBA = [
 
-    "h.gaviria@eliteingenieros.com.co",
+    "d.leon@eliteingenieros.com.co",
 
 ]
 
 COPIA_PRUEBA = [
-
+    "h.gaviria@eliteingenieros.com.co"
 ]
 
 
