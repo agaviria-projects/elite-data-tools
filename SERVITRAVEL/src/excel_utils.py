@@ -9,11 +9,74 @@ Este módulo contiene todas las funciones de acceso a Excel.
 """
 
 from pathlib import Path
+import re
 import shutil
+import unicodedata
 from datetime import datetime
 
 import pandas as pd
 import xlwings as xw
+
+
+# ==========================================================
+# CONFIGURACIÓN DE NORMALIZACIÓN
+# ==========================================================
+
+# Las claves se registran en una forma "limpia" sin tildes,
+# espacios especiales ni diferencias entre mayúsculas/minúsculas.
+# Los valores corresponden al nombre canónico utilizado por SERVITRAVEL.
+#
+# Para agregar una nueva equivalencia:
+#
+#     "NOMBRE RECIBIDO": "NOMBRE ESPERADO",
+#
+EQUIVALENCIAS_ENCABEZADOS = {
+    "KM EXTRA DESPUES DE 90": "KM EXTRA DESPUES DE",
+    "KM EXTRA DESPUES DE 100": "KM EXTRA DESPUES DE",
+    "KM EXTRA DESPUES DE 110": "KM EXTRA DESPUES DE",
+    "KM EXTRA DESPUES DE 120": "KM EXTRA DESPUES DE",
+    "KM EXTRA DESPUES DE": "KM EXTRA DESPUES DE",
+    "TOTAL PARQUEADERO": "TOTAL PARQUEADEROS",
+    "TOTAL PARQUEADEROS": "TOTAL PARQUEADEROS",
+    "MIN HORAS": "MIN HORA",
+    "MIN HORA": "MIN HORA",
+    "OBSERVACION": "OBSERVACION",
+    "OBSERVACIONES": "OBSERVACION",
+    "VALOR ELITE": "VALOR ÉLITE",
+    "VALOR HORA EXTRA": "VALOR HORA EXTRA",
+    "HORAS EXTRA": "HORAS EXTRA",
+    "HORAS TRABAJADAS": "HORAS TRABAJADAS",
+    "TOTAL HORAS": "TOTAL HORAS",
+    "VALOR KM EXTRA": "VALOR KM EXTRA",
+    "FECHA VIATICOS": "FECHA VIATICOS",
+    "TOTAL VIATICOS": "TOTAL VIATICOS",
+    "CANT PEAJES": "CANT PEAJES",
+    "CANT PEAJE": "CANT PEAJES",
+    "CANTIDAD PEAJES": "CANT PEAJES",
+    "CANTIDAD DE PEAJES": "CANT PEAJES",
+    "VALOR PEAJE": "VALOR PEAJE",
+}
+
+# Columnas que construir_dataframe_destino() consume directamente
+# y que pueden crearse con un valor seguro cuando el usuario no las
+# suministra en el archivo de origen.
+COLUMNAS_OPCIONALES_NUMERICAS = {
+    "HORAS TRABAJADAS",
+    "ALMUERZO",
+    "MIN HORA",
+    "HORAS EXTRA",
+    "VALOR HORA EXTRA",
+    "TOTAL HORAS",
+    "PEAJES",
+    "KM EXTRA DESPUES DE",
+    "VALOR KM EXTRA",
+    "VALOR ÉLITE",
+}
+
+COLUMNAS_OPCIONALES_TEXTO = {
+    "OBSERVACION",
+}
+
 
 # ==========================================================
 # BACKUP
@@ -40,6 +103,8 @@ def crear_backup(archivo_excel: Path, carpeta_backup: Path):
 
 def abrir_excel(archivo: Path):
 
+    archivo = Path(archivo)
+
     if not archivo.exists():
 
         raise FileNotFoundError(
@@ -51,7 +116,11 @@ def abrir_excel(archivo: Path):
     app.display_alerts = False
     app.screen_updating = False
 
-    libro = app.books.open(str(archivo))
+    try:
+        libro = app.books.open(str(archivo))
+    except Exception:
+        app.quit()
+        raise
 
     return app, libro
 
@@ -65,8 +134,11 @@ def cerrar_excel(app, libro):
     try:
         libro.save()
     finally:
-        libro.close()
-        app.quit()
+        try:
+            libro.close()
+        finally:
+            app.quit()
+
 
 # ==========================================================
 # BUSCAR FILA DE ENCABEZADOS
@@ -99,7 +171,296 @@ COLUMNAS_PEAJES = {
     "CANT PEAJES",
     "VALOR PEAJE"
 }
-import re
+
+
+# ==========================================================
+# FUNCIONES AUXILIARES
+# ==========================================================
+
+def _texto_base_encabezado(nombre):
+    """
+    Convierte un encabezado a una forma comparable y estable.
+    No representa necesariamente el nombre final usado por el ETL.
+    """
+
+    if nombre is None:
+        return ""
+
+    try:
+        if pd.isna(nombre):
+            return ""
+    except (TypeError, ValueError):
+        pass
+
+    texto = str(nombre)
+
+    # Normalizar distintas representaciones Unicode.
+    texto = unicodedata.normalize("NFKC", texto)
+
+    # Espacios y caracteres invisibles frecuentes provenientes de Excel.
+    texto = (
+        texto
+        .replace("\u00A0", " ")
+        .replace("\u1680", " ")
+        .replace("\u180E", "")
+        .replace("\u2000", " ")
+        .replace("\u2001", " ")
+        .replace("\u2002", " ")
+        .replace("\u2003", " ")
+        .replace("\u2004", " ")
+        .replace("\u2005", " ")
+        .replace("\u2006", " ")
+        .replace("\u2007", " ")
+        .replace("\u2008", " ")
+        .replace("\u2009", " ")
+        .replace("\u200A", " ")
+        .replace("\u200B", "")
+        .replace("\u200C", "")
+        .replace("\u200D", "")
+        .replace("\u202F", " ")
+        .replace("\u205F", " ")
+        .replace("\u2060", "")
+        .replace("\u3000", " ")
+        .replace("\uFEFF", "")
+    )
+
+    # Saltos de línea, tabulaciones y espacios múltiples.
+    texto = re.sub(r"[\r\n\t\v\f]+", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip().upper()
+
+    # Eliminar tildes y otros signos diacríticos para comparación.
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(
+        caracter
+        for caracter in texto
+        if not unicodedata.combining(caracter)
+    )
+
+    # Segunda limpieza tras la descomposición Unicode.
+    texto = re.sub(r"\s+", " ", texto).strip()
+
+    return texto
+
+
+def _nombre_archivo_desde_hoja(hoja):
+    """
+    Intenta obtener el nombre del archivo que contiene la hoja.
+    """
+
+    try:
+        ruta = hoja.book.fullname
+        if ruta:
+            return Path(str(ruta)).name
+    except Exception:
+        pass
+
+    try:
+        nombre = hoja.book.name
+        if nombre:
+            return str(nombre)
+    except Exception:
+        pass
+
+    return "archivo desconocido"
+
+
+def _nombre_hoja(hoja):
+    """
+    Obtiene un nombre legible de la hoja.
+    """
+
+    try:
+        return str(hoja.name)
+    except Exception:
+        return "hoja desconocida"
+
+
+def _normalizar_conjunto_columnas(columnas):
+    """
+    Normaliza un iterable de nombres de columnas.
+    """
+
+    return {
+        normalizar_encabezado(columna)
+        for columna in columnas
+        if normalizar_encabezado(columna)
+    }
+
+
+def _fusionar_columnas_duplicadas(df):
+    """
+    Si dos encabezados distintos terminan representando la misma columna
+    canónica, conserva una sola columna tomando el primer valor no vacío
+    de izquierda a derecha.
+    """
+
+    if df.empty and not df.columns.duplicated().any():
+        return df
+
+    columnas = list(df.columns)
+
+    if len(columnas) == len(set(columnas)):
+        return df
+
+    resultado = pd.DataFrame(index=df.index)
+    procesadas = set()
+
+    for nombre in columnas:
+
+        if nombre in procesadas:
+            continue
+
+        posiciones = [
+            indice
+            for indice, columna in enumerate(columnas)
+            if columna == nombre
+        ]
+
+        if len(posiciones) == 1:
+            resultado[nombre] = df.iloc[:, posiciones[0]]
+        else:
+            bloque = df.iloc[:, posiciones].copy()
+
+            # Tratar cadenas vacías como ausencia únicamente durante la
+            # fusión para permitir recuperar un valor existente en otra
+            # columna equivalente.
+            bloque = bloque.replace(r"^\s*$", pd.NA, regex=True)
+
+            resultado[nombre] = bloque.bfill(axis=1).iloc[:, 0]
+
+            print(
+                f"⚠ Encabezado duplicado normalizado: {nombre}. "
+                "Se conservará el primer valor disponible."
+            )
+
+        procesadas.add(nombre)
+
+    return resultado
+
+
+def _normalizar_columnas_dataframe(df):
+    """
+    Normaliza todos los nombres de columnas y resuelve equivalencias.
+    """
+
+    df = df.copy()
+    df.columns = [
+        normalizar_encabezado(columna)
+        for columna in df.columns
+    ]
+
+    df = _fusionar_columnas_duplicadas(df)
+
+    return df
+
+
+def _es_tabla_anio(columnas_obligatorias):
+    """
+    Determina si la lectura corresponde a la tabla principal AÑO.
+    """
+
+    obligatorias = _normalizar_conjunto_columnas(columnas_obligatorias)
+
+    return _normalizar_conjunto_columnas(COLUMNAS_ANIO).issubset(obligatorias)
+
+
+def _crear_columnas_opcionales(df, archivo_excel, nombre_hoja, columnas_obligatorias):
+    """
+    Crea únicamente las columnas opcionales requeridas por el flujo
+    de la tabla principal.
+    """
+
+    if not _es_tabla_anio(columnas_obligatorias):
+        return df
+
+    for columna in COLUMNAS_OPCIONALES_NUMERICAS:
+
+        if columna not in df.columns:
+
+            df[columna] = 0
+
+            print(
+                f"\n⚠ Archivo {Path(archivo_excel).name}\n"
+                f"Hoja: {nombre_hoja}\n"
+                f"No existe la columna:\n"
+                f"{columna}\n"
+                f"Se utilizará valor 0."
+            )
+
+    for columna in COLUMNAS_OPCIONALES_TEXTO:
+
+        if columna not in df.columns:
+
+            df[columna] = ""
+
+            print(
+                f"\n⚠ Archivo {Path(archivo_excel).name}\n"
+                f"Hoja: {nombre_hoja}\n"
+                f"No existe la columna:\n"
+                f"{columna}\n"
+                f'Se utilizará valor "".'
+            )
+
+    return df
+
+
+def _validar_columnas_obligatorias_dataframe(
+    df,
+    archivo_excel,
+    nombre_hoja,
+    columnas_obligatorias
+):
+    """
+    Verifica que las columnas requeridas existan después de normalizar.
+    """
+
+    obligatorias = _normalizar_conjunto_columnas(columnas_obligatorias)
+
+    faltantes = sorted(
+        columna
+        for columna in obligatorias
+        if columna not in df.columns
+    )
+
+    if not faltantes:
+        return True
+
+    for columna in faltantes:
+
+        print(
+            f"\n❌ Archivo: {Path(archivo_excel).name}\n"
+            f"Hoja: {nombre_hoja}\n"
+            f"Columna faltante: {columna}\n"
+            "Causa: la columna obligatoria no existe o no pudo "
+            "ser reconocida en los encabezados."
+        )
+
+    return False
+
+
+def _imprimir_error_lectura(
+    archivo_excel,
+    nombre_hoja,
+    causa,
+    columna=None
+):
+    """
+    Muestra un error de lectura con contexto suficiente para el usuario.
+    """
+
+    print("\n" + "=" * 60)
+    print("❌ ERROR AL PROCESAR ARCHIVO")
+    print("=" * 60)
+    print(f"Archivo : {Path(archivo_excel).name}")
+    print(f"Hoja    : {nombre_hoja}")
+
+    if columna:
+        print(f"Columna : {columna}")
+
+    print(f"Causa   : {causa}")
+    print("Este archivo será omitido.")
+    print("=" * 60)
+
 
 # ==========================================================
 # NORMALIZAR ENCABEZADOS
@@ -107,23 +468,28 @@ import re
 
 def normalizar_encabezado(nombre):
 
-    nombre = str(nombre).strip().upper()
+    nombre_base = _texto_base_encabezado(nombre)
 
-    # Unificar espacios
-    nombre = re.sub(r"\s+", " ", nombre)
+    if not nombre_base:
+        return ""
 
-    # MIN HORAS -> MIN HORA
-    if nombre == "MIN HORAS":
-        return "MIN HORA"
+    # Equivalencias exactas registradas.
+    if nombre_base in EQUIVALENCIAS_ENCABEZADOS:
+        return EQUIVALENCIAS_ENCABEZADOS[nombre_base]
 
-    # KM EXTRA DESPUES DE 90 / 110 / 120...
-    if nombre.startswith("KM EXTRA DESPUES DE"):
+    # Variantes dinámicas:
+    # KM EXTRA DESPUES DE 90
+    # KM EXTRA DESPUES DE 110
+    # KM EXTRA DESPUES DE 120
+    # etc.
+    if re.fullmatch(
+        r"KM\s+EXTRA\s+DESPUES\s+DE(?:\s+\d+(?:[.,]\d+)?)?",
+        nombre_base
+    ):
         return "KM EXTRA DESPUES DE"
 
-    if nombre == "TOTAL PARQUEADERO":
-        return "TOTAL PARQUEADEROS"
+    return nombre_base
 
-    return nombre
 
 def buscar_encabezados(hoja, columnas_obligatorias):
     """
@@ -134,13 +500,35 @@ def buscar_encabezados(hoja, columnas_obligatorias):
         columnas -> diccionario con la posición de cada columna
     """
 
-    ultima_fila = hoja.used_range.last_cell.row
-    ultima_columna = hoja.used_range.last_cell.column
+    archivo = _nombre_archivo_desde_hoja(hoja)
+    nombre_hoja = _nombre_hoja(hoja)
+
+    obligatorias = _normalizar_conjunto_columnas(
+        columnas_obligatorias
+    )
+
+    if not obligatorias:
+        raise ValueError(
+            f"Archivo: {archivo} | Hoja: {nombre_hoja} | "
+            "Causa: no se definieron columnas obligatorias para "
+            "localizar los encabezados."
+        )
+
+    try:
+        ultima_fila = hoja.used_range.last_cell.row
+        ultima_columna = hoja.used_range.last_cell.column
+    except Exception as e:
+        raise RuntimeError(
+            f"Archivo: {archivo} | Hoja: {nombre_hoja} | "
+            f"Causa: no fue posible determinar el rango utilizado. {e}"
+        ) from e
+
+    mejor_fila = None
+    mejor_encontrados = set()
 
     for fila in range(1, ultima_fila + 1):
 
         encabezados = {}
-
         encontrados = set()
 
         for columna in range(1, ultima_columna + 1):
@@ -150,28 +538,44 @@ def buscar_encabezados(hoja, columnas_obligatorias):
             if valor is None:
                 continue
 
-            nombre = str(valor).strip().upper()
+            nombre = normalizar_encabezado(valor)
 
-            encabezados[nombre] = columna
+            if not nombre:
+                continue
 
-            if nombre in columnas_obligatorias:
+            # Mantener la primera aparición de una columna canónica.
+            if nombre not in encabezados:
+                encabezados[nombre] = columna
+
+            if nombre in obligatorias:
                 encontrados.add(nombre)
 
-        # Si encontró todas las columnas obligatorias,
-        # esta es la fila del encabezado.
+        if len(encontrados) > len(mejor_encontrados):
+            mejor_fila = fila
+            mejor_encontrados = encontrados
 
-        # if fila <= 10:
-        #     print(f"\nFila {fila}: {encabezados}")
-
-        if columnas_obligatorias.issubset(encontrados):
+        if obligatorias.issubset(encontrados):
 
             print(f"✓ Encabezados encontrados en fila {fila}")
 
             return fila, encabezados
 
-    raise Exception(
-        "No fue posible localizar los encabezados del archivo."
+    faltantes = sorted(obligatorias - mejor_encontrados)
+
+    detalle_faltantes = ", ".join(faltantes) if faltantes else "desconocidas"
+
+    if mejor_fila is not None:
+        detalle_fila = f" La fila más cercana fue la {mejor_fila}."
+    else:
+        detalle_fila = ""
+
+    raise ValueError(
+        f"Archivo: {archivo} | Hoja: {nombre_hoja} | "
+        f"Columnas faltantes: {detalle_faltantes} | "
+        "Causa: no fue posible localizar una fila que contenga "
+        f"todos los encabezados obligatorios.{detalle_fila}"
     )
+
 
 # ==========================================================
 # LEER TABLA ORIGEN
@@ -183,65 +587,170 @@ def leer_tabla(
     columnas_obligatorias
 ):
 
+    archivo_excel = Path(archivo_excel)
+
     print(f"Leyendo: {archivo_excel.name}")
 
-    app, libro = abrir_excel(archivo_excel)
+    app = None
+    libro = None
 
     try:
 
-        hoja = libro.sheets[nombre_hoja]
+        app, libro = abrir_excel(archivo_excel)
 
-    except Exception as e:
+        try:
+            hoja = libro.sheets[nombre_hoja]
 
-        print(f"\n❌ Error al abrir la hoja '{nombre_hoja}'")
-        print(f"Detalle: {e}")
+        except Exception as e:
 
-        print("\n📋 Hojas disponibles:")
+            print(f"\n❌ Error al abrir la hoja '{nombre_hoja}'")
+            print(f"Archivo: {archivo_excel.name}")
+            print(f"Detalle: {e}")
 
-        for hoja_libro in libro.sheets:
-            print(f"   - {hoja_libro.name}")
+            print("\n📋 Hojas disponibles:")
+
+            for hoja_libro in libro.sheets:
+                print(f"   - {hoja_libro.name}")
+
+            cerrar_excel(app, libro)
+            app = None
+            libro = None
+
+            return None, None
+
+        # Buscar automáticamente la fila de encabezados
+        try:
+            fila_encabezado, columnas = buscar_encabezados(
+                hoja,
+                columnas_obligatorias
+            )
+
+        except Exception as e:
+
+            _imprimir_error_lectura(
+                archivo_excel=archivo_excel,
+                nombre_hoja=nombre_hoja,
+                causa=str(e)
+            )
+
+            cerrar_excel(app, libro)
+            app = None
+            libro = None
+
+            return None, None
+
+        # Obtener el rango real utilizado
+        ultima_fila = hoja.used_range.last_cell.row
+        ultima_columna = hoja.used_range.last_cell.column
+
+        # Leer toda la tabla
+        rango = hoja.range(
+            (fila_encabezado, 1),
+            (ultima_fila, ultima_columna)
+        )
+
+        df = rango.options(
+            pd.DataFrame,
+            header=1,
+            index=False
+        ).value
 
         cerrar_excel(app, libro)
+        app = None
+        libro = None
+
+        if df is None:
+            _imprimir_error_lectura(
+                archivo_excel=archivo_excel,
+                nombre_hoja=nombre_hoja,
+                causa="Excel no devolvió datos para la tabla."
+            )
+            return None, None
+
+        # Normalizar encabezados
+        df = _normalizar_columnas_dataframe(df)
+
+        # Validar obligatorias después de la lectura real.
+        if not _validar_columnas_obligatorias_dataframe(
+            df=df,
+            archivo_excel=archivo_excel,
+            nombre_hoja=nombre_hoja,
+            columnas_obligatorias=columnas_obligatorias
+        ):
+            return None, None
+
+        # Crear columnas opcionales antes de que sean consumidas
+        # por las funciones constructoras.
+        df = _crear_columnas_opcionales(
+            df=df,
+            archivo_excel=archivo_excel,
+            nombre_hoja=nombre_hoja,
+            columnas_obligatorias=columnas_obligatorias
+        )
+
+        # Eliminar filas completamente vacías
+        df = df.dropna(how="all")
+
+        # Eliminar registros sin placa
+        if "PLACA" not in df.columns:
+            _imprimir_error_lectura(
+                archivo_excel=archivo_excel,
+                nombre_hoja=nombre_hoja,
+                columna="PLACA",
+                causa=(
+                    "La columna obligatoria PLACA no está disponible "
+                    "después de normalizar los encabezados."
+                )
+            )
+            return None, None
+
+        df = df[df["PLACA"].notna()]
+
+        df = df.reset_index(drop=True)
+
+        return df, columnas
+
+    except KeyError as e:
+
+        columna = str(e).strip("'\"")
+
+        _imprimir_error_lectura(
+            archivo_excel=archivo_excel,
+            nombre_hoja=nombre_hoja,
+            columna=columna,
+            causa=(
+                "Se intentó utilizar una columna que no existe "
+                "después de normalizar el archivo."
+            )
+        )
 
         return None, None
 
+    except Exception as e:
 
-    # Buscar automáticamente la fila de encabezados
-    fila_encabezado, columnas = buscar_encabezados(
-        hoja,
-        columnas_obligatorias
-    )
+        _imprimir_error_lectura(
+            archivo_excel=archivo_excel,
+            nombre_hoja=nombre_hoja,
+            causa=str(e)
+        )
 
-    # Obtener el rango real utilizado
-    ultima_fila = hoja.used_range.last_cell.row
-    ultima_columna = hoja.used_range.last_cell.column
+        return None, None
 
-    # Leer toda la tabla
-    rango = hoja.range(
-        (fila_encabezado, 1),
-        (ultima_fila, ultima_columna)
-    )
+    finally:
 
-    df = rango.options(
-        pd.DataFrame,
-        header=1,
-        index=False
-    ).value
+        if app is not None and libro is not None:
 
-    cerrar_excel(app, libro)
+            try:
+                cerrar_excel(app, libro)
+            except Exception:
+                pass
 
-    # Normalizar encabezados
-    df.columns = [normalizar_encabezado(c) for c in df.columns]
+        elif app is not None:
 
-    # Eliminar filas completamente vacías
-    df = df.dropna(how="all")
-
-    # Eliminar registros sin placa
-    df = df[df["PLACA"].notna()]
-
-    df = df.reset_index(drop=True)
-
-    return df, columnas
+            try:
+                app.quit()
+            except Exception:
+                pass
 
 
 # ==========================================================
@@ -332,6 +841,8 @@ def escribir_dataframe(
 
     # Limpiar portapapeles
     hoja.api.Application.CutCopyMode = False
+
+
 # ==========================================================
 # OBTENER MES
 # ==========================================================
@@ -370,6 +881,7 @@ def obtener_mes(fecha):
 
         return ""
 
+
 # ==========================================================
 # OBTENER CORTE
 # ==========================================================
@@ -392,6 +904,8 @@ def obtener_corte(fecha):
     except Exception:
 
         return ""
+
+
 # ==========================================================
 # OBTENER ZONA
 # ==========================================================
@@ -421,6 +935,7 @@ def obtener_zona(nombre_archivo):
         nombre
     )
 
+
 # ==========================================================
 # OBTENER COLUMNAS DEL DESTINO
 # ==========================================================
@@ -434,6 +949,7 @@ def obtener_columnas_destino(hoja):
         hoja,
         COLUMNAS_ANIO
     )
+
 
 def construir_dataframe_destino(df_origen, zona):
 
@@ -498,6 +1014,7 @@ def construir_dataframe_destino(df_origen, zona):
 
     return df
 
+
 # ==========================================================
 # CONSTRUIR DATAFRAME DESTINO VIATICOS
 # ==========================================================
@@ -521,6 +1038,7 @@ def construir_dataframe_viaticos(df_origen, zona):
     df = df.reset_index(drop=True)
 
     return df
+
 
 # ==========================================================
 # CONSTRUIR DATAFRAME DESTINO PARQUEADEROS
@@ -546,6 +1064,7 @@ def construir_dataframe_parqueaderos(df_origen, zona):
     df = df.reset_index(drop=True)
 
     return df
+
 
 # ==========================================================
 # CONSTRUIR DATAFRAME DESTINO PEAJES
@@ -585,6 +1104,7 @@ def construir_dataframe_peajes(df_origen, zona):
         *
         pd.to_numeric(df["VALOR PEAJE"], errors="coerce").fillna(0)
     )
+
     # ======================================================
     # REORDENAR COLUMNAS
     # ======================================================
@@ -605,6 +1125,7 @@ def construir_dataframe_peajes(df_origen, zona):
     df = df.reset_index(drop=True)
 
     return df
+
 
 # ==========================================================
 # IMPRIMIR RESUMEN
