@@ -906,6 +906,8 @@ def consolidar_actas():
             # =========================================================
 
             condicion_tecnologo_agpe = item_cont_norm.isin([
+                "C07R",
+                "C07U",
                 "C08R",
                 "C08U",
                 "C09R",
@@ -919,6 +921,207 @@ def consolidar_actas():
 
             df.loc[
                 condicion_tecnologo_agpe,
+                "agrupado_actividad_region"
+            ] = "NO APLICA"
+
+            # =========================================================
+            # COMPLETAR TECNÓLOGO AGPE PARA REGISTROS NO APLICA
+            #
+            # Si el mismo PEDIDO + ZONA contiene un registro AGPE,
+            # sus registros NO APLICA también pertenecen a AGPE.
+            # No modifica LEGALIZACIÓN, PREPAGO, HV, etc.
+            # =========================================================
+
+            pedido_norm = (
+                df["pedido"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            agrupado_norm = (
+                df["agrupado_por_actividad"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            # Clave PEDIDO + ZONA para evitar mezclar zonas
+            clave_pedido_zona = (
+                pedido_norm
+                + "|"
+                + zona_norm
+            )
+
+            # Pedidos/Zonas que ya contienen TECNÓLOGO AGPE
+            claves_con_agpe = set(
+                clave_pedido_zona[
+                    agrupado_norm.eq("TECNÓLOGO AGPE")
+                ]
+            )
+
+            # ÚNICAMENTE registros actualmente NO APLICA
+            condicion_no_aplica_agpe = (
+                agrupado_norm.eq("NO APLICA")
+                &
+                clave_pedido_zona.isin(claves_con_agpe)
+            )
+
+            cantidad_no_aplica_agpe = int(
+                condicion_no_aplica_agpe.sum()
+            )
+
+            if cantidad_no_aplica_agpe > 0:
+                print(
+                    "✅ Registros NO APLICA integrados a TECNÓLOGO AGPE: "
+                    f"{cantidad_no_aplica_agpe}"
+                )
+            # =========================================================
+            # AUDITORÍA TEMPORAL NO APLICA -> TECNÓLOGO AGPE
+            # =========================================================
+
+            columnas_auditoria = [
+                "pedido",
+                "actividad",
+                "item_cont",
+                "item_res",
+                "zona",
+                "contrato",
+                "valor_cd",
+                "reajuste_-_valor_cd"
+            ]
+
+            columnas_auditoria = [
+                col for col in columnas_auditoria
+                if col in df.columns
+            ]
+
+            auditoria_no_aplica_agpe = df.loc[
+                condicion_no_aplica_agpe,
+                columnas_auditoria
+            ].copy()
+
+            if not auditoria_no_aplica_agpe.empty:
+
+                auditoria_no_aplica_agpe["total_cd_reajuste"] = (
+                    pd.to_numeric(
+                        auditoria_no_aplica_agpe.get("valor_cd", 0),
+                        errors="coerce"
+                    ).fillna(0)
+                    +
+                    pd.to_numeric(
+                        auditoria_no_aplica_agpe.get("reajuste_-_valor_cd", 0),
+                        errors="coerce"
+                    ).fillna(0)
+                )
+
+                print("\n🔎 AUDITORÍA NO APLICA -> TECNÓLOGO AGPE")
+
+                print(
+                    auditoria_no_aplica_agpe[
+                        [
+                            col for col in [
+                                "pedido",
+                                "actividad",
+                                "item_cont",
+                                "item_res",
+                                "zona",
+                                "total_cd_reajuste"
+                            ]
+                            if col in auditoria_no_aplica_agpe.columns
+                        ]
+                    ].to_string(index=False)
+                )
+            df.loc[
+                condicion_no_aplica_agpe,
+                "agrupado_por_actividad"
+            ] = "TECNÓLOGO AGPE"
+
+            df.loc[
+                condicion_no_aplica_agpe,
+                "agrupado_actividad_region"
+            ] = "NO APLICA"
+
+            # =========================================================
+            # COMPLETAR TECNÓLOGO AGPE POR PEDIDO
+            #
+            # REGLA:
+            # Si un PEDIDO + ZONA contiene alguno de estos ITEM_CONT:
+            # C07R/C07U/C08R/C08U/C09R/C09U,
+            # entonces todos sus registros AORDI que estén como
+            # HV METROPOLITANO o NO APLICA pertenecen a TECNÓLOGO AGPE.
+            #
+            # No modifica otras agrupaciones.
+            # =========================================================
+
+            pedido_norm = (
+                df["pedido"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            agrupado_norm = (
+                df["agrupado_por_actividad"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            codigos_base_agpe = [
+                "C07R",
+                "C07U",
+                "C08R",
+                "C08U",
+                "C09R",
+                "C09U"
+            ]
+
+            # Clave PEDIDO + ZONA
+            clave_pedido_zona = (
+                pedido_norm
+                + "|"
+                + zona_norm
+            )
+
+            # Pedidos que contienen un código que identifica TECNÓLOGO AGPE
+            claves_pedido_agpe = set(
+                clave_pedido_zona[
+                    item_cont_norm.isin(codigos_base_agpe)
+                ]
+            )
+
+            # Reclasificar únicamente AORDI del mismo pedido
+            # que hayan quedado como HV METROPOLITANO o NO APLICA.
+            condicion_pedido_agpe = (
+                clave_pedido_zona.isin(claves_pedido_agpe)
+                &
+                (actividad_norm == "AORDI")
+                &
+                agrupado_norm.isin([
+                    "HV METROPOLITANO",
+                    "NO APLICA"
+                ])
+            )
+
+            cantidad_pedido_agpe = int(
+                condicion_pedido_agpe.sum()
+            )
+
+            if cantidad_pedido_agpe > 0:
+                print(
+                    "✅ Registros AORDI integrados a TECNÓLOGO AGPE "
+                    "por pedido con C07/C08/C09: "
+                    f"{cantidad_pedido_agpe}"
+                )
+
+            df.loc[
+                condicion_pedido_agpe,
+                "agrupado_por_actividad"
+            ] = "TECNÓLOGO AGPE"
+
+            df.loc[
+                condicion_pedido_agpe,
                 "agrupado_actividad_region"
             ] = "NO APLICA"
 
@@ -1042,7 +1245,8 @@ def consolidar_actas():
                 condicion_hv_nordeste_desde_legalizacion,
                 "agrupado_actividad_region"
             ] = "NO APLICA"
-                        # =========================================================
+
+            # =========================================================
             # UNIFICAR HV METROPOLITANO
             # =========================================================
 
@@ -1072,6 +1276,57 @@ def consolidar_actas():
                 "agrupado_actividad_region"
             ] = "NO APLICA"
             
+            
+            # =========================================================
+            # UNIFICAR HV + PREPAGO POR ZONA
+            # Solo NORDESTE, OCCIDENTE, ORIENTE y SUROESTE.
+            # METROPOLITANO se conserva separado:
+            #   - HV METROPOLITANO
+            #   - PREPAGO
+            # =========================================================
+
+            zonas_hv_prepago = [
+                "NORDESTE",
+                "OCCIDENTE",
+                "ORIENTE",
+                "SUROESTE"
+            ]
+
+            agrupado_norm = (
+                df["agrupado_por_actividad"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            condicion_unificar_hv_prepago = (
+                zona_norm.isin(zonas_hv_prepago)
+                &
+                (
+                    agrupado_norm.eq("PREPAGO")
+                    |
+                    agrupado_norm.eq("HV " + zona_norm)
+                )
+            )
+
+            cantidad_unificados_hv_prepago = int(
+                condicion_unificar_hv_prepago.sum()
+            )
+
+            if cantidad_unificados_hv_prepago > 0:
+                print(
+                    "✅ Registros unificados como HV + PREPAGO por zona: "
+                    f"{cantidad_unificados_hv_prepago}"
+                )
+
+            df.loc[
+                condicion_unificar_hv_prepago,
+                "agrupado_por_actividad"
+            ] = (
+                "HV + PREPAGO "
+                + zona_norm.loc[condicion_unificar_hv_prepago]
+            )
+
             registros.append(df)
 
         
@@ -1148,7 +1403,7 @@ def consolidar_actas():
         by=["acta", "zona", "pedido"],
         ascending=[True, True, True]
     ).reset_index(drop=True)
-    
+
     # =========================================================
     # EVENTOS OPERATIVOS ÚNICOS POR ACTA
     # =========================================================
@@ -1253,6 +1508,7 @@ def consolidar_actas():
                 pd.to_numeric(df_final.loc[mascara, col])
                 .round(2)
             )
+
 
     with pd.ExcelWriter(
         ARCHIVO_SALIDA,
