@@ -279,6 +279,15 @@ REGLAS_UNO_DE = {
 # --- 2) Materiales a ignorar (amarillos) si aparecen, para que NO cuenten como sobrantes
 MATERIALES_IGNORAR_GLOBAL = {"215887", "219404"}
 
+# ============================================================
+# REGLAS DE MATERIALES POR SUBZONA
+# ============================================================
+
+MATERIALES_SOLO_POR_SUBZONA = {
+    "200099": {"NDC"},
+}
+
+
 
 def _recalcular_estado(obligatorios_set, entregados_set):
     """Replica la lógica de estado sin tocar el loop original."""
@@ -347,10 +356,38 @@ def _post_procesar_validacion(df_resultado_in):
         if key not in _entregados_map:
             continue
 
-        obligatorios = set(mo_to_materiales.get(mo, []))
-        obligatorios = _aplicar_reglas_uno_de(mo, obligatorios, entregados)
+        obligatorios = set(
+            mo_to_materiales.get(mo, [])
+        )
 
-        estado, estado_codigo, faltantes_str, sobrantes_str = _recalcular_estado(obligatorios, entregados)
+        # ============================================================
+        # REGLAS DE MATERIALES SEGÚN SUBZONA
+        #
+        # Ejemplo:
+        # 200099 solamente aplica para NDC
+        # ============================================================
+        for material, subzonas_permitidas in MATERIALES_SOLO_POR_SUBZONA.items():
+
+            if subz not in subzonas_permitidas:
+
+                # Fuera de la subzona permitida, el material NO APLICA.
+                # No debe generar ni FALTANTE ni SOBRANTE.
+                obligatorios.discard(material)
+                entregados.discard(material)
+
+        # Aplicar reglas UNO DE existentes
+        obligatorios = _aplicar_reglas_uno_de(
+            mo,
+            obligatorios,
+            entregados
+        )
+
+        estado, estado_codigo, faltantes_str, sobrantes_str = (
+            _recalcular_estado(
+                obligatorios,
+                entregados
+            )
+        )
 
         # ============================================================
         # 🔴 ALERTA ESPECÍFICA A31 (conflicto + cantidad)
@@ -911,6 +948,520 @@ print(
     f"🚨 Materiales con cantidad > 1 encontrados: "
     f"{len(df_material_cantidad)}"
 )
+
+# ============================================================
+# HOJA NUEVA: ALERTA_RURAL_URBANO
+#
+# RESPONSABILIDAD EXCLUSIVA:
+# Validar correspondencia entre:
+#   urbrur
+#   item_cont
+#
+# Regla:
+# - urbrur = R -> item_cont debe terminar en R
+# - urbrur = U -> item_cont debe terminar en U
+#
+# Esta hoja NO valida actividades.
+# ============================================================
+
+def validar_correspondencia_rural_urbano(df_export_in):
+
+    columnas_salida = [
+        "pedido",
+        "subzona",
+        "urbrur",
+        "item_cont",
+        "terminacion_item",
+        "estado",
+        "detalle",
+    ]
+
+    columnas_requeridas = {
+        "pedido",
+        "subz",
+        "urbrur",
+        "item_cont",
+    }
+
+    columnas_faltantes = (
+        columnas_requeridas
+        - set(df_export_in.columns)
+    )
+
+    if columnas_faltantes:
+        print(
+            "⚠️ No se pudo ejecutar ALERTA_RURAL_URBANO. "
+            f"Faltan columnas: {sorted(columnas_faltantes)}"
+        )
+
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df_ru = df_export_in[
+        [
+            "pedido",
+            "subz",
+            "urbrur",
+            "item_cont",
+        ]
+    ].copy()
+
+    # ---------------------------------------------
+    # Normalizar
+    # ---------------------------------------------
+
+    df_ru["urbrur"] = (
+        df_ru["urbrur"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df_ru["item_cont"] = (
+        df_ru["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    # ---------------------------------------------
+    # Solo códigos que comiencen con letra
+    # ---------------------------------------------
+
+    mask_inicia_letra = (
+        df_ru["item_cont"]
+        .str.match(r"^[A-Z]", na=False)
+    )
+
+    mask_ru_valido = (
+        df_ru["urbrur"]
+        .isin(["R", "U"])
+    )
+
+    df_ru = df_ru[
+        mask_inicia_letra
+        & mask_ru_valido
+    ].copy()
+
+    if df_ru.empty:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    # ---------------------------------------------
+    # Última letra
+    # ---------------------------------------------
+
+    df_ru["terminacion_item"] = (
+        df_ru["item_cont"]
+        .str[-1]
+    )
+
+    # ---------------------------------------------
+    # Solo validar terminaciones U o R
+    # Excluir A, P y cualquier otra terminación
+    # ---------------------------------------------
+
+    df_ru = df_ru[
+        df_ru["terminacion_item"].isin([
+            "U",
+            "R"
+        ])
+    ].copy()
+
+    if df_ru.empty:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    # ---------------------------------------------
+    # Detectar inconsistencia
+    # ---------------------------------------------
+
+    mask_inconsistente = (
+        (
+            df_ru["urbrur"].eq("R")
+            & ~df_ru["terminacion_item"].eq("R")
+        )
+        |
+        (
+            df_ru["urbrur"].eq("U")
+            & ~df_ru["terminacion_item"].eq("U")
+        )
+    )
+
+    df_alerta_ru = df_ru[
+        mask_inconsistente
+    ].copy()
+
+    if df_alerta_ru.empty:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df_alerta_ru["estado"] = (
+        "INCONSISTENCIA_RURAL_URBANO"
+    )
+
+    def construir_detalle(fila):
+
+        clasificacion = fila["urbrur"]
+        item = fila["item_cont"]
+        terminacion = fila["terminacion_item"]
+
+        if clasificacion == "R":
+            esperado = "R"
+            tipo_zona = "RURAL"
+        else:
+            esperado = "U"
+            tipo_zona = "URBANO"
+
+        return (
+            f"Zona {tipo_zona}: el código {item} "
+            f"termina en {terminacion} y debería terminar en {esperado}"
+        )
+
+    df_alerta_ru["detalle"] = (
+        df_alerta_ru.apply(
+            construir_detalle,
+            axis=1
+        )
+    )
+
+    df_alerta_ru = (
+        df_alerta_ru
+        .rename(
+            columns={
+                "subz": "subzona"
+            }
+        )
+        .sort_values(
+            by=[
+                "subzona",
+                "pedido",
+                "item_cont",
+            ],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+
+    return df_alerta_ru[
+        columnas_salida
+    ]
+
+
+df_alerta_rural_urbano = (
+    validar_correspondencia_rural_urbano(
+        df_export
+    )
+)
+
+print(
+    "🚨 Inconsistencias Rural/Urbano encontradas: "
+    f"{len(df_alerta_rural_urbano)}"
+)
+
+
+# ============================================================
+# HOJA NUEVA: ALERTA_ACTIVIDADES
+#
+# RESPONSABILIDAD EXCLUSIVA:
+# Validar reglas específicas por actividad.
+#
+# AMRTR:
+#   - Debe tener D04U o D04R
+#   - Debe tener D02U o D02R
+#   - Debe tener D03U o D03R
+#   - Cualquier otro D genera alerta
+#
+# ACREV:
+#   - Debe tener D01U Y D01R
+#   - Cualquier otro D genera alerta
+#
+# AEJDO:
+#   - Debe tener:
+#       CALE1F
+#       A12U
+#       A18U
+#       A19U
+#
+# Esta hoja NO valida Rural/Urbano.
+# ============================================================
+
+def validar_reglas_actividades(df_export_in):
+
+    columnas_salida = [
+        "pedido",
+        "subzona",
+        "actividad",
+        "tipo_alerta",
+        "items_encontrados",
+        "items_faltantes",
+        "items_no_permitidos",
+        "detalle",
+    ]
+
+    columnas_requeridas = {
+        "pedido",
+        "subz",
+        "actividad",
+        "item_cont",
+        "item_res",
+    }
+
+    columnas_faltantes = (
+        columnas_requeridas
+        - set(df_export_in.columns)
+    )
+
+    if columnas_faltantes:
+        print(
+            "⚠️ No se pudo ejecutar ALERTA_ACTIVIDADES. "
+            f"Faltan columnas: {sorted(columnas_faltantes)}"
+        )
+
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df = df_export_in.copy()
+
+    for columna in [
+        "pedido",
+        "subz",
+        "actividad",
+        "item_cont",
+        "item_res",
+    ]:
+        df[columna] = (
+            df[columna]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    resultados = []
+
+    for (pedido, subzona, actividad), grupo in df.groupby(
+        ["pedido", "subz", "actividad"]
+    ):
+
+        items_cont = {
+            x for x in grupo["item_cont"]
+            if x
+        }
+
+        items_res = {
+            x for x in grupo["item_res"]
+            if x
+        }
+
+        # ====================================================
+        # AMRTR
+        # ====================================================
+
+        if actividad == "AMRTR":
+
+            permitidos = {
+                "D04U", "D04R",
+                "D02U", "D02R",
+                "D03U", "D03R",
+            }
+
+            items_d = {
+                x for x in items_cont
+                if x.startswith("D")
+            }
+
+            no_permitidos = sorted(
+                items_d - permitidos
+            )
+
+            faltantes = []
+
+            if not items_d.intersection(
+                {"D04U", "D04R"}
+            ):
+                faltantes.append(
+                    "D04U/D04R"
+                )
+
+            if not items_d.intersection(
+                {"D02U", "D02R"}
+            ):
+                faltantes.append(
+                    "D02U/D02R"
+                )
+
+            if not items_d.intersection(
+                {"D03U", "D03R"}
+            ):
+                faltantes.append(
+                    "D03U/D03R"
+                )
+
+            if faltantes or no_permitidos:
+
+                detalle = []
+
+                if faltantes:
+                    detalle.append(
+                        "Faltan ítems obligatorios: "
+                        + ", ".join(faltantes)
+                    )
+
+                if no_permitidos:
+                    detalle.append(
+                        "Ítems no permitidos para AMRTR: "
+                        + ", ".join(no_permitidos)
+                    )
+
+                resultados.append({
+                    "pedido": pedido,
+                    "subzona": subzona,
+                    "actividad": actividad,
+                    "tipo_alerta": "REGLA_AMRTR",
+                    "items_encontrados": ", ".join(
+                        sorted(items_d)
+                    ),
+                    "items_faltantes": ", ".join(
+                        faltantes
+                    ),
+                    "items_no_permitidos": ", ".join(
+                        no_permitidos
+                    ),
+                    "detalle": " | ".join(
+                        detalle
+                    ),
+                })
+
+        # ====================================================
+        # ACREV
+        # ====================================================
+
+        elif actividad == "ACREV":
+
+            obligatorios = {
+                "D01U",
+                "D01R",
+            }
+
+            items_d = {
+                x for x in items_cont
+                if x.startswith("D")
+            }
+
+            faltantes = sorted(
+                obligatorios - items_d
+            )
+
+            no_permitidos = sorted(
+                items_d - obligatorios
+            )
+
+            if faltantes or no_permitidos:
+
+                detalle = []
+
+                if faltantes:
+                    detalle.append(
+                        "Faltan ítems obligatorios: "
+                        + ", ".join(faltantes)
+                    )
+
+                if no_permitidos:
+                    detalle.append(
+                        "Ítems no permitidos para ACREV: "
+                        + ", ".join(no_permitidos)
+                    )
+
+                resultados.append({
+                    "pedido": pedido,
+                    "subzona": subzona,
+                    "actividad": actividad,
+                    "tipo_alerta": "REGLA_ACREV",
+                    "items_encontrados": ", ".join(
+                        sorted(items_d)
+                    ),
+                    "items_faltantes": ", ".join(
+                        faltantes
+                    ),
+                    "items_no_permitidos": ", ".join(
+                        no_permitidos
+                    ),
+                    "detalle": " | ".join(
+                        detalle
+                    ),
+                })
+
+        # ====================================================
+        # AEJDO
+        # ====================================================
+
+        elif actividad == "AEJDO":
+
+            obligatorios = {
+                "CALE1F",
+                "A12U",
+                "A18U",
+                "A19U",
+            }
+
+            faltantes = sorted(
+                obligatorios - items_res
+            )
+
+            encontrados = sorted(
+                items_res & obligatorios
+            )
+
+            if faltantes:
+
+                resultados.append({
+                    "pedido": pedido,
+                    "subzona": subzona,
+                    "actividad": actividad,
+                    "tipo_alerta": "REGLA_AEJDO",
+                    "items_encontrados": ", ".join(
+                        encontrados
+                    ),
+                    "items_faltantes": ", ".join(
+                        faltantes
+                    ),
+                    "items_no_permitidos": "",
+                    "detalle": (
+                        "AEJDO no tiene todos los ítems obligatorios. "
+                        "Faltan: "
+                        + ", ".join(faltantes)
+                    ),
+                })
+
+    if not resultados:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    return pd.DataFrame(
+        resultados,
+        columns=columnas_salida
+    )
+
+
+df_alerta_actividades = (
+    validar_reglas_actividades(
+        df_export
+    )
+)
+
+print(
+    "🚨 Alertas por actividad encontradas: "
+    f"{len(df_alerta_actividades)}"
+)
 # ============================================================
 # EXPORTAR RESULTADO
 # ============================================================
@@ -935,11 +1486,24 @@ with pd.ExcelWriter(
         sheet_name="MO_DUPLICADAS",
         index=False
     )
+
     df_material_cantidad.to_excel(
         writer,
         sheet_name="ALERTA_CANTIDADES",
         index=False
     )
+
+    df_alerta_rural_urbano.to_excel(
+        writer,
+        sheet_name="ALERTA_RURAL_URBANO",
+        index=False
+    )
+
+    df_alerta_actividades.to_excel(
+        writer,
+        sheet_name="ALERTA_ACTIVIDADES",
+        index=False
+        )
 # ============================================================
 # FORMATO PROFESIONAL DEL EXCEL (NO TOCA LÓGICA)
 # ============================================================
@@ -951,6 +1515,16 @@ if "MO_DUPLICADAS" in wb.sheetnames:
 
 if "ALERTA_CANTIDADES" in wb.sheetnames:
     wb["ALERTA_CANTIDADES"].sheet_properties.tabColor = "FFC000"
+
+if "ALERTA_RURAL_URBANO" in wb.sheetnames:
+    wb[
+        "ALERTA_RURAL_URBANO"
+    ].sheet_properties.tabColor = "7030A0"
+
+if "ALERTA_ACTIVIDADES" in wb.sheetnames:
+    wb[
+        "ALERTA_ACTIVIDADES"
+    ].sheet_properties.tabColor = "0070C0"
 
 ws = wb["VALIDACION"]
 
@@ -1203,6 +1777,222 @@ if "ALERTA_CANTIDADES" in wb.sheetnames:
             ws_mat.conditional_formatting.add(
                 f"{letra}2:{letra}{ws_mat.max_row}",
                 regla
+            )
+
+# ============================================================
+# FORMATO HOJA ALERTA_RURAL_URBANO
+# ============================================================
+
+if "ALERTA_RURAL_URBANO" in wb.sheetnames:
+
+    ws_ru = wb["ALERTA_RURAL_URBANO"]
+
+    ws_ru.freeze_panes = "A2"
+    ws_ru.auto_filter.ref = ws_ru.dimensions
+
+    fill_morado = PatternFill(
+        "solid",
+        fgColor="7030A0"
+    )
+
+    font_blanco = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    align_center = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for cell in ws_ru[1]:
+        cell.fill = fill_morado
+        cell.font = font_blanco
+        cell.alignment = align_center
+
+    fill_alerta_ru = PatternFill(
+        "solid",
+        fgColor="E4DFEC"
+    )
+
+    for fila in ws_ru.iter_rows(
+        min_row=2,
+        max_row=ws_ru.max_row,
+        min_col=1,
+        max_col=ws_ru.max_column
+    ):
+        for celda in fila:
+            celda.fill = fill_alerta_ru
+
+    # Resaltar específicamente el código inconsistente
+    encabezados_ru = {
+        cell.value: idx + 1
+        for idx, cell in enumerate(ws_ru[1])
+    }
+
+    col_item_cont = encabezados_ru.get(
+        "item_cont"
+    )
+
+    if col_item_cont:
+
+        fill_rojo = PatternFill(
+            "solid",
+            fgColor="C00000"
+        )
+
+        for fila in range(
+            2,
+            ws_ru.max_row + 1
+        ):
+            celda = ws_ru.cell(
+                row=fila,
+                column=col_item_cont
+            )
+
+            celda.fill = fill_rojo
+            celda.font = font_blanco
+
+    # Ajustar anchos
+    for columna in ws_ru.columns:
+
+        max_length = 0
+        letra = get_column_letter(
+            columna[0].column
+        )
+
+        for cell in columna:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+
+        ws_ru.column_dimensions[
+            letra
+        ].width = min(
+            max_length + 5,
+            70
+        )
+
+    # Ajustes de alineación
+    for fila in ws_ru.iter_rows(
+        min_row=2
+    ):
+        fila[0].alignment = align_center
+        fila[1].alignment = align_center
+        fila[2].alignment = align_center
+        fila[3].alignment = align_center
+        fila[4].alignment = align_center
+
+        if len(fila) > 6:
+            fila[6].alignment = Alignment(
+                vertical="center",
+                wrap_text=True
+            )
+
+# ============================================================
+# FORMATO HOJA ALERTA_ACTIVIDADES
+# ============================================================
+
+if "ALERTA_ACTIVIDADES" in wb.sheetnames:
+
+    ws_act = wb["ALERTA_ACTIVIDADES"]
+
+    ws_act.freeze_panes = "A2"
+    ws_act.auto_filter.ref = ws_act.dimensions
+
+    fill_azul = PatternFill(
+        "solid",
+        fgColor="0070C0"
+    )
+
+    font_blanco = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    fill_alerta = PatternFill(
+        "solid",
+        fgColor="D9EAF7"
+    )
+
+    align_center = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for cell in ws_act[1]:
+        cell.fill = fill_azul
+        cell.font = font_blanco
+        cell.alignment = align_center
+
+    for fila in ws_act.iter_rows(
+        min_row=2,
+        max_row=ws_act.max_row,
+        min_col=1,
+        max_col=ws_act.max_column
+    ):
+        for celda in fila:
+            celda.fill = fill_alerta
+
+    encabezados_act = {
+        cell.value: idx + 1
+        for idx, cell in enumerate(ws_act[1])
+    }
+
+    col_no_permitidos = encabezados_act.get(
+        "items_no_permitidos"
+    )
+
+    if col_no_permitidos:
+
+        fill_rojo = PatternFill(
+            "solid",
+            fgColor="C00000"
+        )
+
+        for fila in range(
+            2,
+            ws_act.max_row + 1
+        ):
+            celda = ws_act.cell(
+                row=fila,
+                column=col_no_permitidos
+            )
+
+            if celda.value:
+                celda.fill = fill_rojo
+                celda.font = font_blanco
+
+    for columna in ws_act.columns:
+
+        max_length = 0
+        letra = get_column_letter(
+            columna[0].column
+        )
+
+        for cell in columna:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+
+        ws_act.column_dimensions[
+            letra
+        ].width = min(
+            max_length + 5,
+            70
+        )
+
+    for fila in ws_act.iter_rows(
+        min_row=2
+    ):
+        for celda in fila:
+            celda.alignment = Alignment(
+                vertical="center",
+                wrap_text=True
             )
 
 wb.save(archivo)
