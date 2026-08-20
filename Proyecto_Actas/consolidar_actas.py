@@ -1091,17 +1091,21 @@ def consolidar_actas():
                 ]
             )
 
-            # Reclasificar únicamente AORDI del mismo pedido
-            # que hayan quedado como HV METROPOLITANO o NO APLICA.
+            # =========================================================
+            # CORREGIR LEGALIZACIÓN -> TECNÓLOGO AGPE POR PEDIDO
+            #
+            # Si PEDIDO + ZONA contiene C07/C08/C09,
+            # solo las filas que actualmente quedaron como
+            # LEGALIZACIÓN + ZONA pasan a TECNÓLOGO AGPE.
+            # =========================================================
+
             condicion_pedido_agpe = (
                 clave_pedido_zona.isin(claves_pedido_agpe)
                 &
-                (actividad_norm == "AORDI")
-                &
-                agrupado_norm.isin([
-                    "HV METROPOLITANO",
-                    "NO APLICA"
-                ])
+                agrupado_norm.str.startswith(
+                    "LEGALIZACIÓN",
+                    na=False
+                )
             )
 
             cantidad_pedido_agpe = int(
@@ -1326,6 +1330,91 @@ def consolidar_actas():
                 "HV + PREPAGO "
                 + zona_norm.loc[condicion_unificar_hv_prepago]
             )
+            # =========================================================
+            # PRIORIDAD FINAL TECNÓLOGO AGPE
+            #
+            # Si PEDIDO + ZONA contiene C07/C08/C09,
+            # ninguna regla posterior puede dejarlo en otra agrupación.
+            # =========================================================
+
+            pedido_norm = (
+                df["pedido"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            zona_norm = (
+                df["zona"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            item_cont_norm = (
+                df["item_cont"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            clave_pedido_zona = (
+                pedido_norm
+                + "|"
+                + zona_norm
+            )
+
+            codigos_base_agpe = [
+                "C07R",
+                "C07U",
+                "C08R",
+                "C08U",
+                "C09R",
+                "C09U"
+            ]
+
+            claves_agpe_final = set(
+                clave_pedido_zona[
+                    item_cont_norm.isin(codigos_base_agpe)
+                ]
+            )
+
+            agrupado_norm_final = (
+                df["agrupado_por_actividad"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            condicion_agpe_final = (
+                clave_pedido_zona.isin(claves_agpe_final)
+                &
+                agrupado_norm_final.str.startswith(
+                    "LEGALIZACIÓN",
+                    na=False
+                )
+            )
+
+            cantidad_agpe_final = int(
+                condicion_agpe_final.sum()
+            )
+
+            if cantidad_agpe_final > 0:
+                print(
+                    "✅ Prioridad final TECNÓLOGO AGPE aplicada: "
+                    f"{cantidad_agpe_final}"
+                )
+
+            df.loc[
+                condicion_agpe_final,
+                "agrupado_por_actividad"
+            ] = "TECNÓLOGO AGPE"
+
+            df.loc[
+                condicion_agpe_final,
+                "agrupado_actividad_region"
+            ] = "NO APLICA"
 
             registros.append(df)
 
@@ -1339,6 +1428,224 @@ def consolidar_actas():
         return
 
     df_nuevo = pd.concat(registros, ignore_index=True)
+
+    # =========================================================
+    # CORRECCIÓN GLOBAL AGPE DESPUÉS DE UNIFICAR LOS ARCHIVOS
+    #
+    # Problema que resuelve:
+    # Un mismo PEDIDO puede venir repartido entre varios Excel.
+    #
+    # Regla:
+    # Si ACTA + ZONA + PEDIDO contiene C07/C08/C09,
+    # las filas del mismo pedido que hayan quedado como
+    # LEGALIZACIÓN + ZONA pasan a TECNÓLOGO AGPE.
+    #
+    # NO modifica otras agrupaciones.
+    # =========================================================
+
+    pedido_global = (
+        df_nuevo["pedido"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    zona_global = (
+        df_nuevo["zona"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    acta_global = (
+        df_nuevo["acta"]
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)
+        .str.strip()
+    )
+
+    item_cont_global = (
+        df_nuevo["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    agrupado_global = (
+        df_nuevo["agrupado_por_actividad"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    codigos_agpe_global = [
+        "C07R",
+        "C07U",
+        "C08R",
+        "C08U",
+        "C09R",
+        "C09U"
+    ]
+
+    # Clave completa para no mezclar actas ni zonas
+    clave_global = (
+        acta_global
+        + "|"
+        + zona_global
+        + "|"
+        + pedido_global
+    )
+
+    # Pedidos que realmente contienen código AGPE
+    claves_con_agpe_global = set(
+        clave_global[
+            item_cont_global.isin(
+                codigos_agpe_global
+            )
+        ]
+    )
+
+    # =========================================================
+    # CORRECCIÓN GLOBAL AGPE - SOLO REGLA CONFIRMADA
+    #
+    # Si ACTA + ZONA + PEDIDO contiene C07/C08/C09,
+    # únicamente las filas de LEGALIZACIÓN del mismo pedido
+    # pasan a TECNÓLOGO AGPE.
+    #
+    # HV METROPOLITANO y NO APLICA NO se modifican aquí.
+    # Se dejan para revisión con el ingeniero.
+    # =========================================================
+
+    condicion_agpe_global = (
+        clave_global.isin(
+            claves_con_agpe_global
+        )
+        &
+        agrupado_global.str.startswith(
+            "LEGALIZACIÓN",
+            na=False
+        )
+    )
+    
+    cantidad_corregida_agpe_global = int(
+        condicion_agpe_global.sum()
+    )
+
+    if cantidad_corregida_agpe_global > 0:
+        print(
+            "✅ Registros reclasificados globalmente "
+            "a TECNÓLOGO AGPE: "
+            f"{cantidad_corregida_agpe_global}"
+        )
+
+    df_nuevo.loc[
+        condicion_agpe_global,
+        "agrupado_por_actividad"
+    ] = "TECNÓLOGO AGPE"
+
+    df_nuevo.loc[
+        condicion_agpe_global,
+        "agrupado_actividad_region"
+    ] = "NO APLICA"
+    # =========================================================
+    # QA - PEDIDOS PRESENTES EN MÁS DE UNA AGRUPACIÓN
+    # SOLO AUDITORÍA: NO MODIFICA DATOS NI REGLAS DE NEGOCIO
+    # =========================================================
+
+    columnas_qa = [
+        "acta",
+        "zona",
+        "pedido",
+        "agrupado_por_actividad"
+    ]
+
+    if all(col in df_nuevo.columns for col in columnas_qa):
+
+        qa_agrupaciones = (
+            df_nuevo[columnas_qa]
+            .drop_duplicates()
+        )
+
+        cantidad_agrupaciones = (
+            qa_agrupaciones
+            .groupby(
+                ["acta", "zona", "pedido"]
+            )["agrupado_por_actividad"]
+            .nunique()
+            .reset_index(name="cantidad_agrupaciones")
+        )
+
+        pedidos_multiples_agrupaciones = (
+            cantidad_agrupaciones[
+                cantidad_agrupaciones[
+                    "cantidad_agrupaciones"
+                ] > 1
+            ]
+            .copy()
+        )
+
+        detalle_conflictos = (
+            qa_agrupaciones
+            .merge(
+                pedidos_multiples_agrupaciones[
+                    [
+                        "acta",
+                        "zona",
+                        "pedido",
+                        "cantidad_agrupaciones"
+                    ]
+                ],
+                on=["acta", "zona", "pedido"],
+                how="inner"
+            )
+            .sort_values(
+                by=[
+                    "acta",
+                    "zona",
+                    "pedido",
+                    "agrupado_por_actividad"
+                ],
+                kind="stable"
+            )
+            .reset_index(drop=True)
+        )
+
+        if detalle_conflictos.empty:
+            print(
+                "✅ QA AGRUPACIONES: "
+                "ningún pedido aparece en más de una agrupación."
+            )
+        else:
+            print(
+                "\n⚠️ QA AGRUPACIONES: "
+                f"{len(pedidos_multiples_agrupaciones)} "
+                "pedidos aparecen en más de una agrupación."
+            )
+
+            print(
+                detalle_conflictos
+                .head(100)
+                .to_string(index=False)
+            )
+
+    else:
+
+        detalle_conflictos = pd.DataFrame(
+            columns=[
+                "acta",
+                "zona",
+                "pedido",
+                "agrupado_por_actividad",
+                "cantidad_agrupaciones"
+            ]
+        )
+
+        print(
+            "⚠️ QA AGRUPACIONES no ejecutado. "
+            "Faltan columnas requeridas."
+        )
 
     if MODO_EJECUCION == "ANEXAR":
 
@@ -1541,6 +1848,14 @@ def consolidar_actas():
             writer,
             index=False,
             sheet_name="PEDIDOS_REPETIDOS"
+        )
+
+        # Hoja QA: pedidos presentes en más de una agrupación
+        # Solo auditoría; no modifica el consolidado.
+        detalle_conflictos.to_excel(
+            writer,
+            index=False,
+            sheet_name="PEDIDOS_MULTIPLES_AGRUP"
         )
 
     print("\n==============================")
