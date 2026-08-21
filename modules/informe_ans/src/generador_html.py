@@ -600,7 +600,8 @@ def generar_actividades(
             )
 
             tabla_html = generar_tabla(
-                actividad["tabla"]
+                actividad["tabla"],
+                correo["grupo"],
             )
 
             html += f"""
@@ -996,7 +997,10 @@ def badge_estado(estado: str):
 # GENERAR TABLA
 # ==========================================================
 
-def generar_tabla(df) -> str:
+def generar_tabla(
+    df,
+    grupo,
+) -> str:
     """
     Genera la tabla HTML manteniendo exactamente
     las columnas y el orden del DataFrame.
@@ -1028,6 +1032,41 @@ def generar_tabla(df) -> str:
         "
     >
     """
+    # ======================================================
+    # OBSERVACIÓN SOLO PARA PUNTOS DE CONEXIÓN
+    # ======================================================
+
+    if (
+        grupo == "PUNTOS DE CONEXIÓN"
+        and "ACTIVIDAD" in df.columns
+        and "SUBPED" in df.columns
+    ):
+
+        df.insert(
+            loc=1,
+            column="OBSERVACION",
+            value=""
+        )
+
+        mask = (
+            df["ACTIVIDAD"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .eq("ACREV")
+            &
+            (
+                df["SUBPED"]
+                .astype(str)
+                .str.strip()
+                != "1"
+            )
+        )
+
+        df.loc[
+            mask,
+            "OBSERVACION"
+        ] = "RECONSIDERACION"
 
     # ======================================================
     # ENCABEZADO
@@ -1044,6 +1083,21 @@ def generar_tabla(df) -> str:
     """
 
     for columna in df.columns:
+
+        titulo = columna
+
+        if columna == "OBSERVACION":
+
+            titulo = "OBSERVACIÓN"
+
+        ancho_extra = ""
+
+        if columna == "SUBPED":
+
+            ancho_extra = """
+                min-width:65px;
+                width:65px;
+            """
 
         html += f"""
         <th
@@ -1063,12 +1117,12 @@ def generar_tabla(df) -> str:
                 font-weight:700;
                 line-height:13px;
                 mso-line-height-rule:exactly;
+                {ancho_extra}
             "
         >
-            {columna}
+            {titulo}
         </th>
         """
-
     html += "</tr>"
 
     # ======================================================
@@ -1147,7 +1201,30 @@ def generar_tabla(df) -> str:
             # ESTADO
             # ----------------------------------------------
 
-            if columna == "ESTADO":
+            if columna == "OBSERVACION":
+
+                if valor == "RECONSIDERACION":
+
+                    valor = """
+                    <span
+                        style="
+                            display:inline-block;
+                            padding:3px 8px;
+                            background:#DBEAFE;
+                            color:#1D4ED8;
+                            border:1px solid #93C5FD;
+                            border-radius:12px;
+                            font-family:'Segoe UI', Arial, sans-serif;
+                            font-size:10px;
+                            font-weight:700;
+                            white-space:nowrap;
+                        "
+                    >
+                        RECONSIDERACIÓN
+                    </span>
+                    """
+
+            elif columna == "ESTADO":
 
                 valor = badge_estado(valor)
 
@@ -1193,6 +1270,14 @@ def generar_tabla(df) -> str:
                     min-width:112px;
                 """
 
+            elif columna == "SUBPED":
+
+                estilo_extra = """
+                    white-space:nowrap;
+                    text-align:center;
+                    min-width:65px;
+                    width:65px;
+                """
             else:
 
                 estilo_extra = """

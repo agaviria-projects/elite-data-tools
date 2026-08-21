@@ -40,4 +40,6 @@ COLUMNAS_REQUERIDAS = [
 
     "ESTADO",
 
+    "SUBPED",
+
 ]
