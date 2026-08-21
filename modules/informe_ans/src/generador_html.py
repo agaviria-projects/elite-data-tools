@@ -1,4 +1,5 @@
 from pathlib import Path
+import pandas as pd
 
 
 # ==========================================================
@@ -1047,20 +1048,62 @@ def generar_tabla(
             column="OBSERVACION",
             value=""
         )
+        # ======================================================
+        # PEDIDOS SISTEMA PARRILLA
+        # ======================================================
+
+        ruta_parrilla = (
+            BASE_DIR
+            / "config"
+            / "SISTEMA_PARRILLA.xlsx"
+        )
+
+        if ruta_parrilla.exists():
+
+            df_parrilla = pd.read_excel(
+                ruta_parrilla,
+                dtype=str,
+            )
+
+            pedidos_parrilla = (
+                df_parrilla["PEDIDO"]
+                .astype(str)
+                .str.strip()
+            )
+
+            mask_parrilla = (
+                df["PEDIDO"]
+                .astype(str)
+                .str.strip()
+                .isin(pedidos_parrilla)
+            )
+
+            df.loc[
+                mask_parrilla,
+                "OBSERVACION"
+            ] = "SISTEMA PARRILLA"
 
         mask = (
+
+            df["OBSERVACION"].eq("")
+
+            &
+
             df["ACTIVIDAD"]
             .astype(str)
             .str.strip()
             .str.upper()
             .eq("ACREV")
+
             &
+
             (
                 df["SUBPED"]
                 .astype(str)
                 .str.strip()
                 != "1"
             )
+
         )
 
         df.loc[
@@ -1239,7 +1282,26 @@ def generar_tabla(
                         RECONSIDERACIÓN
                     </span>
                     """
+                elif valor == "SISTEMA PARRILLA":
 
+                    valor = """
+                    <span
+                        style="
+                            display:inline-block;
+                            padding:3px 10px;
+                            background:#F3E8FF;
+                            color:#7E22CE;
+                            border:1px solid #D8B4FE;
+                            border-radius:12px;
+                            font-family:'Segoe UI', Arial, sans-serif;
+                            font-size:10px;
+                            font-weight:700;
+                            white-space:nowrap;
+                        "
+                    >
+                        SISTEMA PARRILLA
+                    </span>
+                    """
             elif columna == "ESTADO":
 
                 valor = badge_estado(valor)
