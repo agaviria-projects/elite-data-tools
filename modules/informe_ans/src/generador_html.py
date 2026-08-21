@@ -1069,6 +1069,22 @@ def generar_tabla(
         ] = "RECONSIDERACION"
 
     # ======================================================
+    # OCULTAR COLUMNAS EN LOS DEMÁS CORREOS
+    # ======================================================
+
+    else:
+
+        df = df.drop(
+            columns=[
+                c for c in (
+                    "OBSERVACION",
+                    "SUBPED",
+                )
+                if c in df.columns
+            ]
+        )
+
+    # ======================================================
     # ENCABEZADO
     # ======================================================
 
