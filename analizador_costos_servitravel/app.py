@@ -10,14 +10,7 @@ from components.kpis import mostrar_kpis
 from components.ranking_placas import mostrar_ranking_placas
 from components.indicadores_mensuales import mostrar_indicadores_mensuales
 from components.datos import mostrar_datos
-
-# Próximas fases
-# from components.comparativo import mostrar_comparativo
-# from components.ranking_zonas import mostrar_ranking_zonas
-# from components.ranking_conceptos import mostrar_ranking_conceptos
-# from components.graficos import mostrar_graficos
-# from components.hallazgos import mostrar_hallazgos
-# from components.detalle import mostrar_detalle
+from components.facturacion import mostrar_facturacion
 
 
 # ==========================================================
@@ -44,7 +37,7 @@ cargar_estilos()
 mostrar_banner()
 
 # ==========================================================
-# CARGAR INFORMACIÓN (UNA SOLA VEZ)
+# CARGAR INFORMACIÓN
 # ==========================================================
 
 hojas = leer_todas()
@@ -61,7 +54,6 @@ if resultado is None:
 df = resultado["df"]
 hoja = resultado["hoja"]
 
-
 # ==========================================================
 # NAVEGACIÓN
 # ==========================================================
@@ -72,25 +64,24 @@ opcion = st.radio(
         "📂 Datos",
         "📊 Resumen del período",
         "📈 Indicadores Mensuales",
-        "🚗 Vehículos",
-        "💰 Gastos Operativos",
-        "🗺️ Zonas",
-        "📋 Detalle",
+        "🧾 Facturación",
     ],
     horizontal=True,
     label_visibility="collapsed"
 )
+
 # ==========================================================
 # DATOS
 # ==========================================================
 
 if opcion == "📂 Datos":
 
-     mostrar_datos(hojas)
+    mostrar_datos(hojas)
 
 # ==========================================================
-# RESUMEN EJECUTIVO
+# RESUMEN DEL PERÍODO
 # ==========================================================
+
 if opcion == "📊 Resumen del período":
 
     df_filtrado = mostrar_filtros(
@@ -100,7 +91,9 @@ if opcion == "📊 Resumen del período":
 
     if df_filtrado.empty:
 
-        st.warning("No existen registros para los filtros seleccionados.")
+        st.warning(
+            "No existen registros para los filtros seleccionados."
+        )
 
     else:
 
@@ -123,7 +116,9 @@ if opcion == "📈 Indicadores Mensuales":
 
     if df_filtrado.empty:
 
-        st.warning("No existen registros para los filtros seleccionados.")
+        st.warning(
+            "No existen registros para los filtros seleccionados."
+        )
 
     else:
 
@@ -131,36 +126,11 @@ if opcion == "📈 Indicadores Mensuales":
             df,
             df_filtrado
         )
-   
 
 # ==========================================================
-# VEHÍCULOS
+# FACTURACIÓN
 # ==========================================================
 
-if opcion == "🚗 Vehículos":
+if opcion == "🧾 Facturación":
 
-    st.info("Módulo en construcción.")
-
-# ==========================================================
-# GASTOS OPERATIVOS
-# ==========================================================
-
-if opcion == "💰 Gastos Operativos":
-
-    st.info("Módulo en construcción.")
-
-# ==========================================================
-# ZONAS
-# ==========================================================
-
-if opcion == "🗺️ Zonas":
-
-    st.info("Módulo en construcción.")
-
-# ==========================================================
-# DETALLE
-# ==========================================================
-
-if opcion == "📋 Detalle":
-
-    st.info("Módulo en construcción.")
+    mostrar_facturacion(hojas)

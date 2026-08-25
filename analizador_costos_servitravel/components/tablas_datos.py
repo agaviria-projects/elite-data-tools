@@ -6,7 +6,6 @@ from st_aggrid import (
 )
 
 import pandas as pd
-import streamlit as st
 
 
 # ==========================================================
@@ -17,6 +16,19 @@ def mostrar_tabla(
     df: pd.DataFrame,
     height: int = 460,
 ):
+    """
+    Muestra un DataFrame con estilo corporativo usando AgGrid.
+
+    Incluye:
+    - Filtros por columna.
+    - Filtro flotante debajo de cada encabezado.
+    - Ordenamiento.
+    - Redimensionamiento de columnas.
+    - Selección de texto.
+    - Filas alternadas.
+    - Hover y selección.
+    - Paginación.
+    """
 
     if df is None or df.empty:
         return
@@ -32,14 +44,9 @@ def mostrar_tabla(
     # ======================================================
 
     gb = GridOptionsBuilder.from_dataframe(df)
-    # ======================================================
-    # GRID
-    # ======================================================
-
-    gb = GridOptionsBuilder.from_dataframe(df)
 
     # ======================================================
-    # CONFIGURACIÓN COLUMNAS
+    # CONFIGURACIÓN GENERAL DE COLUMNAS
     # ======================================================
 
     gb.configure_default_column(
@@ -58,76 +65,51 @@ def mostrar_tabla(
     )
 
     # ======================================================
-    # GRID
+    # CONFIGURACIÓN DEL GRID
     # ======================================================
 
     gb.configure_grid_options(
-
         animateRows=True,
-
         pagination=True,
         paginationPageSize=20,
-
         rowHeight=42,
         headerHeight=50,
-
+        floatingFiltersHeight=42,
         suppressRowClickSelection=True,
         enableCellTextSelection=True,
-
+        ensureDomOrder=True,
         rowSelection="single",
-
         domLayout="normal",
-
     )
 
     # ======================================================
-    # ENCABEZADOS
+    # ESTILO DE FILAS
     # ======================================================
 
-    header_style = JsCode("""
-    function(params){
-        params.eGridHeader.style.background='#EEF2F7';
-        params.eGridHeader.style.color='#1F2937';
-        params.eGridHeader.style.fontWeight='700';
-        params.eGridHeader.style.fontSize='13px';
-        params.eGridHeader.style.borderBottom='1px solid #D1D5DB';
-    }
-    """)
+    row_style = JsCode(
+        """
+        function(params) {
 
-    # ======================================================
-    # FILAS
-    # ======================================================
-
-    row_style = JsCode("""
-
-    function(params){
-
-        if(params.node.rowIndex % 2 === 0){
-
-            return{
-                background:'#FFFFFF',
-                borderBottom:'1px solid #E5E7EB'
+            if (params.node.rowIndex % 2 === 0) {
+                return {
+                    background: '#FFFFFF',
+                    borderBottom: '1px solid #E5E7EB'
+                };
             }
 
+            return {
+                background: '#F8FAFC',
+                borderBottom: '1px solid #E5E7EB'
+            };
         }
-
-        return{
-
-            background:'#F8FAFC',
-            borderBottom:'1px solid #E5E7EB'
-
-        }
-
-    }
-
-    """)
+        """
+    )
 
     # ======================================================
-    # RESALTAR FILA AL PASAR EL MOUSE
+    # CSS CORPORATIVO
     # ======================================================
 
     css = {
-
         ".ag-root-wrapper": {
             "border": "1px solid #E5E7EB",
             "border-radius": "12px",
@@ -151,6 +133,19 @@ def mostrar_tabla(
             "justify-content": "center",
         },
 
+        ".ag-floating-filter": {
+            "background-color": "#F8FAFC !important",
+            "border-right": "1px solid #E5E7EB",
+        },
+
+        ".ag-floating-filter-body input": {
+            "border-radius": "6px",
+            "border": "1px solid #CBD5E1",
+            "padding": "5px 7px",
+            "font-size": "12px",
+            "background-color": "#FFFFFF",
+        },
+
         ".ag-cell": {
             "font-size": "13px",
             "color": "#222",
@@ -171,19 +166,12 @@ def mostrar_tabla(
             "font-size": "13px",
             "font-weight": "600",
             "padding": "8px",
-        },
-
-        ".ag-floating-filter-body input": {
-            "border-radius": "6px",
-            "border": "1px solid #CBD5E1",
-            "padding": "5px",
-            "font-size": "12px",
+            "border-top": "1px solid #E5E7EB",
         },
 
         ".ag-checkbox-input-wrapper": {
             "transform": "scale(1.05)",
         },
-
     }
 
     # ======================================================
@@ -191,27 +179,13 @@ def mostrar_tabla(
     # ======================================================
 
     AgGrid(
-
         df,
-
         gridOptions=gb.build(),
-
         height=height,
-
         theme="streamlit",
-        
         custom_css=css,
-
         allow_unsafe_jscode=True,
-
         fit_columns_on_grid_load=True,
-
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
-
         getRowStyle=row_style,
-
-        custom_jscode={
-            "onGridReady": header_style
-        },
-
     )

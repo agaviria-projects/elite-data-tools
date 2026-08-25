@@ -9,7 +9,12 @@ import pandas as pd
 
 BASE = Path(__file__).resolve().parent.parent.parent
 
-ARCHIVO = BASE / "SERVITRAVEL" / "salida" / "INFORME_LIQUIDACION.xlsb"
+ARCHIVO = (
+    BASE
+    / "SERVITRAVEL"
+    / "salida"
+    / "INFORME_LIQUIDACION.xlsb"
+)
 
 
 # ==========================================
@@ -20,23 +25,28 @@ CONFIG_HOJAS = {
 
     "RODAMIENTOS": {
         "header": 0,
-        "usecols": None
+        "usecols": None,
     },
 
     "VIATICOS": {
         "header": 1,
-        "usecols": "A:D"
+        "usecols": "A:D",
     },
 
     "PARQUEADEROS": {
         "header": 0,
-        "usecols": "A:E"
+        "usecols": "A:E",
     },
 
     "PEAJES": {
         "header": 0,
-        "usecols": "A:H"
-    }
+        "usecols": "A:H",
+    },
+
+    "FACTURACION": {
+        "header": 0,
+        "usecols": None,
+    },
 
 }
 
@@ -72,7 +82,7 @@ def obtener_hojas():
 
     with pd.ExcelFile(
         ARCHIVO,
-        engine="pyxlsb"
+        engine="pyxlsb",
     ) as libro:
 
         return libro.sheet_names
@@ -86,43 +96,51 @@ def convertir_fechas(df):
 
     columnas_fecha = [
 
+        # RODAMIENTOS
         "FECHA",
 
+        # VIÁTICOS
         "FECHA VIATICOS",
 
-        "FECHA EN LA QUE SE CAUSA EL PEAJE"
+        # PEAJES
+        "FECHA EN LA QUE SE CAUSA EL PEAJE",
+
+        # FACTURACIÓN
+        "FECHA FACTURA",
+        "VENCIMIENTO",
 
     ]
 
     for columna in columnas_fecha:
 
-        if columna in df.columns:
+        if columna not in df.columns:
+            continue
 
-            try:
+        try:
 
-                serie = df[columna]
+            serie = df[columna]
 
-                # Si viene como número de Excel
-                if pd.api.types.is_numeric_dtype(serie):
+            # Excel puede entregar fechas como números seriales
+            if pd.api.types.is_numeric_dtype(serie):
 
-                    df[columna] = pd.to_datetime(
-                        serie,
-                        unit="D",
-                        origin="1899-12-30",
-                        errors="coerce"
-                    )
+                df[columna] = pd.to_datetime(
+                    serie,
+                    unit="D",
+                    origin="1899-12-30",
+                    errors="coerce",
+                )
 
-                else:
+            else:
 
-                    df[columna] = pd.to_datetime(
-                        serie,
-                        dayfirst=True,
-                        errors="coerce"
-                    )
+                df[columna] = pd.to_datetime(
+                    serie,
+                    dayfirst=True,
+                    errors="coerce",
+                )
 
-            except Exception:
+        except Exception:
 
-                pass
+            pass
 
     return df
 
@@ -136,57 +154,54 @@ def convertir_horas(df):
     columnas_hora = [
 
         "INGRESO",
-
         "SALIDA",
-
         "HORAS TRABAJADAS",
-
         "ALMUERZO",
-
         "MIN HORAS",
-
         "HORAS EXTRA",
-
-        "TOTAL HORAS"
+        "TOTAL HORAS",
 
     ]
 
     for columna in columnas_hora:
 
-        if columna in df.columns:
+        if columna not in df.columns:
+            continue
 
-            try:
+        try:
 
-                serie = df[columna]
+            serie = df[columna]
 
-                # Excel guarda las horas como fracción de día
-                if pd.api.types.is_numeric_dtype(serie):
+            # Excel guarda las horas como fracción de día
+            if pd.api.types.is_numeric_dtype(serie):
 
-                    df[columna] = (
-                        pd.to_numeric(
-                            serie,
-                            errors="coerce"
-                        )
-                        .fillna(0)
-                        * 24
-                    )
-
-                else:
-
-                    tiempo = pd.to_timedelta(
+                df[columna] = (
+                    pd.to_numeric(
                         serie,
-                        errors="coerce"
+                        errors="coerce",
                     )
+                    .fillna(0)
+                    * 24
+                )
 
-                    df[columna] = (
-                        tiempo.dt.total_seconds() / 3600
-                    ).fillna(0)
+            else:
 
-            except Exception:
+                tiempo = pd.to_timedelta(
+                    serie,
+                    errors="coerce",
+                )
 
-                pass
+                df[columna] = (
+                    tiempo.dt.total_seconds()
+                    / 3600
+                ).fillna(0)
+
+        except Exception:
+
+            pass
 
     return df
+
 
 # ==========================================
 # CONVERTIR VALORES MONETARIOS
@@ -196,49 +211,79 @@ def convertir_monedas(df):
 
     columnas_monetarias = [
 
+        # RODAMIENTOS
         "VALOR HORA EXTRA",
-
         "PEAJES",
-
         "VALOR KM EXTRA",
+        "VALOR ÉLITE",
 
-        "VALOR ÉLITE"
+        # VIÁTICOS
+        "TOTAL VIATICOS",
+
+        # PARQUEADEROS
+        "TOTAL PARQUEADEROS",
+
+        # PEAJES
+        "VALOR PEAJE",
+        "TOTAL PEAJES",
+
+        # FACTURACIÓN
+        "SUBTOTAL",
+        "DESCUENTO",
+        "IVA",
+        "RETEFUENTE",
+        "TOTAL",
 
     ]
 
     for columna in columnas_monetarias:
 
-        if columna in df.columns:
+        if columna not in df.columns:
+            continue
 
-            try:
+        try:
 
-                df[columna] = (
-
-                    df[columna]
-
-                    .astype(str)
-
-                    .str.replace("$", "", regex=False)
-
-                    .str.replace(",", "", regex=False)
-
-                    .str.strip()
-
+            df[columna] = (
+                df[columna]
+                .astype(str)
+                .str.replace(
+                    "$",
+                    "",
+                    regex=False,
                 )
+                .str.replace(
+                    ",",
+                    "",
+                    regex=False,
+                )
+                .str.strip()
+            )
 
-                df[columna] = pd.to_numeric(
+            df[columna] = pd.to_numeric(
+                df[columna],
+                errors="coerce",
+            ).fillna(0)
 
-                    df[columna],
+        except Exception:
 
-                    errors="coerce"
-
-                ).fillna(0)
-
-            except Exception:
-
-                pass
+            pass
 
     return df
+
+
+# ==========================================
+# LIMPIAR ENCABEZADOS
+# ==========================================
+
+def limpiar_encabezados(df):
+
+    df.columns = [
+        str(columna).strip()
+        for columna in df.columns
+    ]
+
+    return df
+
 
 # ==========================================
 # LEER UNA HOJA
@@ -254,31 +299,22 @@ def leer_hoja(nombre_hoja):
     hoja = nombre_hoja.strip().upper()
 
     config = CONFIG_HOJAS.get(
-
         hoja,
-
         {
             "header": 0,
-            "usecols": None
-        }
-
+            "usecols": None,
+        },
     )
 
     df = pd.read_excel(
-
         ARCHIVO,
-
         sheet_name=nombre_hoja,
-
         engine="pyxlsb",
-
         header=config["header"],
-
-        usecols=config["usecols"]
-
+        usecols=config["usecols"],
     )
 
-    df.columns = df.columns.str.strip()
+    df = limpiar_encabezados(df)
 
     df = convertir_fechas(df)
 
@@ -286,7 +322,11 @@ def leer_hoja(nombre_hoja):
 
     df = convertir_monedas(df)
 
-    df = df.dropna(how="all")
+    df = df.dropna(
+        how="all"
+    ).reset_index(
+        drop=True
+    )
 
     return df
 
@@ -301,6 +341,8 @@ def leer_todas():
 
     for hoja in obtener_hojas():
 
-        hojas[hoja] = leer_hoja(hoja)
+        hojas[hoja] = leer_hoja(
+            hoja
+        )
 
     return hojas

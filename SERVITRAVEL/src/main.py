@@ -4,9 +4,8 @@ SERVITRAVEL
 CONSOLIDADOR AUTOMÁTICO
 ==========================================================
 
-Autor : Héctor Alejandro Gaviria
-
-Versión : 1.0
+Autor  : Héctor Alejandro Gaviria
+Versión: 1.0
 """
 
 from config import (
@@ -23,15 +22,19 @@ from excel_utils import (
 from consolidador import (
     consolidar_anio,
     consolidar_viaticos,
-    consolidar_parqueaderos
-)
-
-from consolidador import (
-    consolidar_anio,
-    consolidar_viaticos,
     consolidar_parqueaderos,
     consolidar_peajes
 )
+
+from facturacion import (
+    actualizar_facturacion
+)
+
+from dashboard_analytics import (
+    actualizar_dashboard
+)
+
+
 # ==========================================================
 # MAIN
 # ==========================================================
@@ -59,13 +62,19 @@ def main():
     # ABRIR LIBRO
     # ------------------------------------------------------
 
-    print("Abriendo archivo consolidado...")
+    print("\nAbriendo archivo consolidado...")
 
     app, libro = abrir_excel(
         ARCHIVO_CONSOLIDADO
     )
 
+    proceso_correcto = False
+
     try:
+
+        # ==================================================
+        # CONSOLIDACIONES
+        # ==================================================
 
         consolidar_anio(libro)
 
@@ -75,11 +84,33 @@ def main():
 
         consolidar_peajes(libro)
 
+        # ==================================================
+        # ACTUALIZAR FACTURACION
+        # ==================================================
+
+        actualizar_facturacion(
+            libro
+        )
+
+        # ==================================================
+        # ACTUALIZAR MODELO DEL DASHBOARD
+        # ==================================================
+
+        print("\nActualizando análisis del Dashboard...")
+
+        actualizar_dashboard(
+            libro
+        )
+
+        proceso_correcto = True
+
     except Exception as e:
 
-        print("\nERROR\n")
+        print("\n" + "=" * 60)
+        print("ERROR DURANTE EL PROCESO")
+        print("=" * 60)
 
-        print(e)
+        print(f"\n{e}")
 
     finally:
 
@@ -94,9 +125,21 @@ def main():
             libro
         )
 
+    # ======================================================
+    # RESULTADO FINAL
+    # ======================================================
+
     print("\n")
     print("=" * 60)
-    print("PROCESO FINALIZADO CORRECTAMENTE")
+
+    if proceso_correcto:
+
+        print("PROCESO FINALIZADO CORRECTAMENTE")
+
+    else:
+
+        print("PROCESO FINALIZADO CON ERRORES")
+
     print("=" * 60)
 
 
