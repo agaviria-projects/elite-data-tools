@@ -262,23 +262,6 @@ def consolidar_actas():
             # Zona proveniente de la estructura de carpetas
             zona = archivo.parent.name.upper().strip()
 
-            # Zona proveniente de la estructura de carpetas
-            zona = archivo.parent.name.upper().strip()
-
-            print(f"Procesando: ACTA {numero_acta} | {zona} | {archivo.name}")
-
-            df = pd.read_excel(
-                archivo,
-                sheet_name=HOJA_OBJETIVO,
-                dtype={
-                    "pagina": str,
-                    "Pagina": str,
-                    "PAGINA": str,
-                    "página": str,
-                    "Página": str
-                }
-            )
-
             print(f"Procesando: ACTA {numero_acta} | {zona} | {archivo.name}")
 
             df = pd.read_excel(
