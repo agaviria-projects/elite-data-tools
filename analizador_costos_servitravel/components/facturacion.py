@@ -632,7 +632,7 @@ def _mostrar_resumen(
             titleFontSize=13,
             format=",.0f",
         ),
-        scale=alt.Scale(zero=True),
+        scale=alt.Scale(zero=True, padding=80,),
     )
 
     tooltips = [
@@ -827,15 +827,124 @@ def _mostrar_por_proveedor(
         height=460,
     )
 
-    st.markdown("### 📊 Proveedores con mayor facturación")
+    st.markdown("### 📈 Proveedores con mayor facturación")
 
     grafico = (
         resumen
         .head(10)
-        .set_index(col_proveedor)[["TOTAL"]]
+        .copy()
     )
 
-    st.bar_chart(grafico)
+    grafico["TOTAL_LABEL"] = (
+        grafico["TOTAL"]
+        .apply(_moneda)
+    )
+
+    orden_proveedores = (
+        grafico[col_proveedor]
+        .tolist()
+    )
+
+    max_total = float(grafico["TOTAL"].max()) if not grafico.empty else 0
+
+    limite_superior = (
+        max_total * 1.12
+        if max_total > 0
+        else 1
+    )
+
+    eje_x = alt.X(
+        f"{col_proveedor}:N",
+        sort=orden_proveedores,
+        title=None,
+        axis=alt.Axis(
+            labelAngle=-45,
+            labelFontSize=11,
+            labelPadding=10,
+        ),
+    )
+
+    eje_y = alt.Y(
+        "TOTAL:Q",
+        title="Facturación ($)",
+        axis=alt.Axis(
+            format=",.0f",
+            labelFontSize=11,
+        ),
+        scale=alt.Scale(
+            domain=[0, limite_superior],
+        ),
+    )
+
+    tooltips = [
+        alt.Tooltip(
+            f"{col_proveedor}:N",
+            title="Proveedor",
+        ),
+        alt.Tooltip(
+            "TOTAL_LABEL:N",
+            title="Facturación",
+        ),
+    ]
+
+    linea = (
+        alt.Chart(grafico)
+        .mark_line(
+            strokeWidth=3,
+        )
+        .encode(
+            x=eje_x,
+            y=eje_y,
+            tooltip=tooltips,
+        )
+    )
+
+    puntos = (
+        alt.Chart(grafico)
+        .mark_point(
+            filled=True,
+            size=110,
+        )
+        .encode(
+            x=eje_x,
+            y=eje_y,
+            tooltip=tooltips,
+        )
+    )
+
+    etiquetas = (
+        alt.Chart(grafico)
+        .mark_text(
+            dy=-16,
+            fontSize=11,
+            fontWeight="bold",
+        )
+        .encode(
+            x=eje_x,
+            y=eje_y,
+            text=alt.Text(
+                "TOTAL_LABEL:N",
+            ),
+        )
+    )
+
+    grafico_final = (
+        linea
+        + puntos
+        + etiquetas
+    ).properties(
+        height=420,
+    ).configure_view(
+        strokeWidth=0,
+    ).configure_axis(
+        labelColor="#334155",
+        titleColor="#334155",
+    )
+
+    st.altair_chart(
+        grafico_final,
+        use_container_width=True,
+    )
 
 
 # ==========================================================
@@ -854,7 +963,38 @@ def _mostrar_detalle(df):
             "PERIODO_CORTO",
         ],
         errors="ignore",
-    )
+    ).copy()
+
+    # ======================================================
+    # FORMATO FECHA CORTA
+    # ======================================================
+
+    columnas_fecha = [
+        "FECHA",
+        "FECHA FACTURA",
+        "VENCIMIENTO",
+    ]
+
+    for columna in columnas_fecha:
+
+        if columna not in detalle.columns:
+            continue
+
+        serie_fecha = pd.to_datetime(
+            detalle[columna],
+            dayfirst=True,
+            errors="coerce",
+        )
+
+        detalle[columna] = (
+            serie_fecha
+            .dt.strftime("%d/%m/%Y")
+            .fillna("")
+        )
+
+    # ======================================================
+    # MOSTRAR DETALLE
+    # ======================================================
 
     st.caption(
         f"{len(detalle):,} registros encontrados."
@@ -864,7 +1004,6 @@ def _mostrar_detalle(df):
         detalle,
         height=560,
     )
-
 
 # ==========================================================
 # MÓDULO PRINCIPAL
