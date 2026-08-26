@@ -20,6 +20,95 @@ def calcular_variacion(actual, anterior):
 
 
 # ==========================================================
+# KPI PERSONALIZADO
+# ==========================================================
+
+def mostrar_kpi_personalizado(
+    etiqueta,
+    valor,
+    diferencia,
+    porcentaje,
+    tipo="normal",
+    moneda=False,
+    decimales=1,
+):
+    """
+    KPI con control explícito de flecha y color.
+
+    tipo="normal":
+        aumento     -> verde
+        disminución -> rojo
+
+    tipo="costo":
+        aumento     -> rojo
+        disminución -> verde
+    """
+
+    if diferencia > 0:
+        flecha = "↑"
+    elif diferencia < 0:
+        flecha = "↓"
+    else:
+        flecha = "→"
+
+    if tipo == "costo":
+        if diferencia < 0:
+            color_texto = "#15803D"
+            color_fondo = "#DCFCE7"
+        elif diferencia > 0:
+            color_texto = "#DC2626"
+            color_fondo = "#FEE2E2"
+        else:
+            color_texto = "#475569"
+            color_fondo = "#E2E8F0"
+    else:
+        if diferencia > 0:
+            color_texto = "#15803D"
+            color_fondo = "#DCFCE7"
+        elif diferencia < 0:
+            color_texto = "#DC2626"
+            color_fondo = "#FEE2E2"
+        else:
+            color_texto = "#475569"
+            color_fondo = "#E2E8F0"
+
+    if moneda:
+        valor_mostrar = f"$ {valor:,.0f}"
+        diferencia_mostrar = f"$ {abs(diferencia):,.0f}"
+    else:
+        if decimales == 0:
+            valor_mostrar = f"{valor:,.0f}"
+            diferencia_mostrar = f"{abs(diferencia):,.0f}"
+        else:
+            valor_mostrar = f"{valor:,.1f}"
+            diferencia_mostrar = f"{abs(diferencia):,.1f}"
+
+    signo = "+" if diferencia > 0 else "-" if diferencia < 0 else ""
+
+    # IMPORTANTE:
+    # HTML en una sola línea para evitar que Markdown lo interprete
+    # como bloque de código por la indentación.
+    html = (
+        f'<div style="padding:2px 0 10px 0;">'
+        f'<div style="font-size:14px;font-weight:700;color:#111827;'
+        f'margin-bottom:3px;">{etiqueta}</div>'
+        f'<div style="font-size:28px;line-height:1.2;font-weight:800;'
+        f'color:#020617;margin-bottom:7px;">{valor_mostrar}</div>'
+        f'<span style="display:inline-block;background:{color_fondo};'
+        f'color:{color_texto};border-radius:999px;padding:3px 8px;'
+        f'font-size:13px;font-weight:700;">'
+        f'{flecha} {signo}{diferencia_mostrar} ({porcentaje:.1f}%)'
+        f'</span>'
+        f'</div>'
+    )
+
+    st.markdown(
+        html,
+        unsafe_allow_html=True,
+    )
+
+
+# ==========================================================
 # INDICADORES MENSUALES
 # ==========================================================
 
@@ -134,29 +223,42 @@ def mostrar_indicadores_mensuales(
 
     with c1:
 
-        st.metric(
-            label="🚗 Vehículos",
-            value=f"{vehiculos_actual}",
-            delta=f"{diff_veh:+} ({porc_veh:.1f}%)"
+        mostrar_kpi_personalizado(
+            etiqueta="🚗 Vehículos",
+            valor=vehiculos_actual,
+            diferencia=diff_veh,
+            porcentaje=porc_veh,
+            tipo="normal",
+            moneda=False,
+            decimales=0,
         )
 
     with c2:
 
-        st.metric(
-            label="🕒 Horas Extras",
-            value=f"{horas_actual:,.1f}",
-            delta=f"{diff_horas:+,.1f} ({porc_horas:.1f}%)"
+        mostrar_kpi_personalizado(
+            etiqueta="🕒 Horas Extras",
+            valor=horas_actual,
+            diferencia=diff_horas,
+            porcentaje=porc_horas,
+            tipo="costo",
+            moneda=False,
+            decimales=1,
         )
 
     with c3:
 
-        st.metric(
-            label="💰 Valor Hora Extra",
-            value=f"$ {valor_actual:,.0f}",
-            delta=f"$ {diff_valor:+,.0f} ({porc_valor:.1f}%)"
+        mostrar_kpi_personalizado(
+            etiqueta="💰 Valor Hora Extra",
+            valor=valor_actual,
+            diferencia=diff_valor,
+            porcentaje=porc_valor,
+            tipo="costo",
+            moneda=True,
+            decimales=0,
         )
 
     st.divider()
+
     # ======================================================
     # ANÁLISIS POR VEHÍCULO (SPRINT 1)
     # ======================================================
@@ -211,6 +313,7 @@ def mostrar_indicadores_mensuales(
     mostrar_tabla(
         comparativo_placas
     )
+
     # ======================================================
     # SPRINT 1 - COMPARATIVO POR VEHÍCULO
     # ======================================================
@@ -261,6 +364,7 @@ def mostrar_indicadores_mensuales(
         by="DIFERENCIA",
         ascending=False
     )
+
     # ======================================================
     # TOP 3 VEHÍCULOS CON MAYOR AUMENTO
     # ======================================================
@@ -294,6 +398,7 @@ def mostrar_indicadores_mensuales(
         mostrar_tabla(
             top_aumento
         )
+
         # ======================================================
         # TOP 3 ZONAS CON MAYOR AUMENTO
         # ======================================================
@@ -463,14 +568,20 @@ def mostrar_indicadores_mensuales(
 
             st.subheader("💰 Vehículos con mayor aumento en el costo de horas extra")
 
-            mostrar_tabla(
-                comparativo_costos,
-                height=420
+            comparativo_costos_mostrar = comparativo_costos.copy()
+
+            comparativo_costos_mostrar["Incremento ($)"] = (
+                comparativo_costos_mostrar["Incremento ($)"]
+                .apply(lambda valor: f"$ {valor:,.0f}")
             )
-            
-        # ==================================================
-        # CONCLUSIÓN
-        # ==================================================
+
+            mostrar_tabla(
+                comparativo_costos_mostrar
+            )
+
+            # ==================================================
+            # CONCLUSIÓN
+            # ==================================================
 
             principal = comparativo_costos.iloc[0]
 
@@ -481,21 +592,21 @@ def mostrar_indicadores_mensuales(
             )
 
             st.success(
-
                 f"""
-    ### 📌 Resultado principal
+### 📌 Resultado principal
 
-    El vehículo **{principal['Vehículo']}** presentó el mayor incremento en el costo de horas extra durante el período.
+El vehículo **{principal['Vehículo']}** presentó el mayor incremento en el costo de horas extra durante el período.
 
-    **Incremento registrado**
+**Incremento registrado**
 
-    💰 $ {principal['Incremento ($)']:,.0f}
+💰 $ {principal['Incremento ($)']:,.0f}
 
-    **Participación del incremento total**
+**Participación del incremento total**
 
-    📈 {participacion:.1f} %
-    """
+📈 {participacion:.1f} %
+"""
             )
+
     # ======================================================
     # HALLAZGOS
     # ======================================================
