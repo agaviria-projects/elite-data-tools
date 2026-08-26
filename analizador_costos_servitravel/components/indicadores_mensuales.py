@@ -785,14 +785,22 @@ Representa **{participacion:.1f}%** de los incrementos positivos detectados entr
         columnas_moneda=["Incremento ($)"],
     )
 
-    # ======================================================
-    # DETALLE COMPLETO OCULTO
-    # ======================================================
+    # ==========================================================
+    # COMPARATIVO COMPLETO
+    # ==========================================================
 
-    with st.expander(
+    ver_comparativo = st.toggle(
         "🔍 Ver comparativo completo de horas extra por vehículo",
-        expanded=False,
-    ):
+        value=False,
+        key=f"ver_comparativo_{mes_actual}",
+    )
+
+    if ver_comparativo:
+
+        st.markdown(
+            "#### 🚗 Comparativo completo de horas extra por vehículo"
+        )
+
         mostrar_tabla(
             comparativo_placas
         )

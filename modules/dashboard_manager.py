@@ -1,14 +1,16 @@
 from pathlib import Path
 
+import socket
 import subprocess
 import sys
 import time
+import tkinter as tk
 import webbrowser
-import socket
-import tkinter as tk    
-from ttkbootstrap.dialogs import Messagebox
 
 import requests
+
+from ttkbootstrap.dialogs import Messagebox
+
 
 # ==========================================================
 # RUTAS
@@ -26,6 +28,7 @@ PUERTO = 8501
 
 URL_LOCAL = f"http://localhost:{PUERTO}"
 
+
 # ==========================================================
 # OBTENER IP LOCAL
 # ==========================================================
@@ -34,9 +37,14 @@ def obtener_ip():
 
     try:
 
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_DGRAM
+        )
 
-        s.connect(("8.8.8.8", 80))
+        s.connect(
+            ("8.8.8.8", 80)
+        )
 
         ip = s.getsockname()[0]
 
@@ -50,6 +58,8 @@ def obtener_ip():
 
 
 URL_RED = f"http://{obtener_ip()}:{PUERTO}"
+
+
 # ==========================================================
 # PROCESO
 # ==========================================================
@@ -76,6 +86,7 @@ def dashboard_activo():
 
         return False
 
+
 # ==========================================================
 # ESPERAR DASHBOARD
 # ==========================================================
@@ -94,27 +105,48 @@ def esperar_dashboard(timeout=15):
 
     return False
 
+
 # ==========================================================
 # INICIAR DASHBOARD
 # ==========================================================
 
 def iniciar_dashboard():
 
-    # Ya está ejecutándose
+    global _proceso
+
+    # ======================================================
+    # SI YA ESTÁ EJECUTÁNDOSE
+    # ======================================================
+
     if dashboard_activo():
 
-        webbrowser.open(URL_LOCAL)
+        webbrowser.open(
+            URL_LOCAL,
+            new=1
+        )
 
         return URL_RED
 
-    # Validar existencia
+    # ======================================================
+    # VALIDAR EXISTENCIA
+    # ======================================================
+
     if not APP_STREAMLIT.exists():
 
         raise FileNotFoundError(
             f"No existe:\n\n{APP_STREAMLIT}"
         )
 
-    # Ejecutar Streamlit
+    # ======================================================
+    # EJECUTAR STREAMLIT
+    #
+    # IMPORTANTE:
+    # --server.headless=true evita que Streamlit
+    # abra automáticamente una pestaña del navegador.
+    #
+    # DataSuite será quien abra la URL una sola vez.
+    # ======================================================
+
     _proceso = subprocess.Popen(
 
         [
@@ -123,30 +155,40 @@ def iniciar_dashboard():
             "streamlit",
             "run",
             "app.py",
+
             "--server.address",
             "0.0.0.0",
+
             "--server.port",
-            str(PUERTO)
+            str(PUERTO),
+
+            "--server.headless",
+            "true",
         ],
 
         cwd=APP_STREAMLIT.parent,
 
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-
+        stderr=subprocess.DEVNULL,
     )
 
-    # Esperar a que Streamlit responda
+    # ======================================================
+    # ESPERAR A QUE STREAMLIT RESPONDA
+    # ======================================================
 
     if esperar_dashboard():
 
-        webbrowser.open(URL_LOCAL)
+        webbrowser.open(
+            URL_LOCAL,
+            new=1
+        )
 
         return URL_RED
 
     raise RuntimeError(
         "No fue posible iniciar el Dashboard de Streamlit."
     )
+
 
 # ==========================================================
 # COPIAR URL
@@ -160,7 +202,9 @@ def copiar_url():
 
     root.clipboard_clear()
 
-    root.clipboard_append(URL_RED)
+    root.clipboard_append(
+        URL_RED
+    )
 
     root.update()
 
@@ -173,8 +217,7 @@ def copiar_url():
         message=(
             "✅ URL copiada correctamente.\n\n"
             f"{URL_RED}"
-        )
-
+        ),
     )
 
-    return URL_RED  
+    return URL_RED

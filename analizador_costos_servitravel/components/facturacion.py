@@ -275,6 +275,14 @@ def _preparar_facturacion(df):
         .apply(_normalizar_texto)
     )
 
+    if col_proveedor is not None:
+        df[col_proveedor] = (
+            df[col_proveedor]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+    )
+
     df[col_anio] = pd.to_numeric(
         df[col_anio],
         errors="coerce",
