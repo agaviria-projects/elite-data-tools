@@ -1263,14 +1263,22 @@ def validar_reglas_actividades(df_export_in):
 
         # ====================================================
         # AMRTR
+        #
+        # Códigos válidos:
+        # D02U, D02R, D03U, D03R, D04U, D04R
+        #
+        # Reglas:
+        # - Si tiene al menos uno válido -> cumple presencia
+        # - Si no tiene ninguno -> FALTA ÍTEM VÁLIDO
+        # - Si tiene otro Dxx -> ERROR EN DIGITACIÓN
         # ====================================================
 
         if actividad == "AMRTR":
 
             permitidos = {
-                "D04U", "D04R",
                 "D02U", "D02R",
                 "D03U", "D03R",
+                "D04U", "D04R",
             }
 
             items_d = {
@@ -1278,31 +1286,19 @@ def validar_reglas_actividades(df_export_in):
                 if x.startswith("D")
             }
 
+            items_validos = sorted(
+                items_d & permitidos
+            )
+
             no_permitidos = sorted(
                 items_d - permitidos
             )
 
             faltantes = []
 
-            if not items_d.intersection(
-                {"D04U", "D04R"}
-            ):
+            if not items_validos:
                 faltantes.append(
-                    "D04U/D04R"
-                )
-
-            if not items_d.intersection(
-                {"D02U", "D02R"}
-            ):
-                faltantes.append(
-                    "D02U/D02R"
-                )
-
-            if not items_d.intersection(
-                {"D03U", "D03R"}
-            ):
-                faltantes.append(
-                    "D03U/D03R"
+                    "D02U/D02R o D03U/D03R o D04U/D04R"
                 )
 
             if faltantes or no_permitidos:
@@ -1311,13 +1307,12 @@ def validar_reglas_actividades(df_export_in):
 
                 if faltantes:
                     detalle.append(
-                        "Faltan ítems obligatorios: "
-                        + ", ".join(faltantes)
+                        "Falta ítem válido para AMRTR"
                     )
 
                 if no_permitidos:
                     detalle.append(
-                        "Ítems no permitidos para AMRTR: "
+                        "ERROR EN DIGITACIÓN: "
                         + ", ".join(no_permitidos)
                     )
 
@@ -1325,7 +1320,11 @@ def validar_reglas_actividades(df_export_in):
                     "pedido": pedido,
                     "subzona": subzona,
                     "actividad": actividad,
-                    "tipo_alerta": "REGLA_AMRTR",
+                    "tipo_alerta": (
+                        "ERROR EN DIGITACIÓN"
+                        if no_permitidos
+                        else "FALTA ÍTEM VÁLIDO"
+                    ),
                     "items_encontrados": ", ".join(
                         sorted(items_d)
                     ),
@@ -1342,11 +1341,19 @@ def validar_reglas_actividades(df_export_in):
 
         # ====================================================
         # ACREV
+        #
+        # Códigos válidos:
+        # D01U o D01R
+        #
+        # Reglas:
+        # - Si tiene uno de los dos -> cumple presencia
+        # - Si no tiene ninguno -> FALTA ÍTEM VÁLIDO
+        # - Si tiene otro Dxx -> ERROR EN DIGITACIÓN
         # ====================================================
 
         elif actividad == "ACREV":
 
-            obligatorios = {
+            permitidos = {
                 "D01U",
                 "D01R",
             }
@@ -1356,13 +1363,20 @@ def validar_reglas_actividades(df_export_in):
                 if x.startswith("D")
             }
 
-            faltantes = sorted(
-                obligatorios - items_d
+            items_validos = sorted(
+                items_d & permitidos
             )
 
             no_permitidos = sorted(
-                items_d - obligatorios
+                items_d - permitidos
             )
+
+            faltantes = []
+
+            if not items_validos:
+                faltantes.append(
+                    "D01U o D01R"
+                )
 
             if faltantes or no_permitidos:
 
@@ -1370,13 +1384,12 @@ def validar_reglas_actividades(df_export_in):
 
                 if faltantes:
                     detalle.append(
-                        "Faltan ítems obligatorios: "
-                        + ", ".join(faltantes)
+                        "Falta ítem válido para ACREV"
                     )
 
                 if no_permitidos:
                     detalle.append(
-                        "Ítems no permitidos para ACREV: "
+                        "ERROR EN DIGITACIÓN: "
                         + ", ".join(no_permitidos)
                     )
 
@@ -1384,7 +1397,11 @@ def validar_reglas_actividades(df_export_in):
                     "pedido": pedido,
                     "subzona": subzona,
                     "actividad": actividad,
-                    "tipo_alerta": "REGLA_ACREV",
+                    "tipo_alerta": (
+                        "ERROR EN DIGITACIÓN"
+                        if no_permitidos
+                        else "FALTA ÍTEM VÁLIDO"
+                    ),
                     "items_encontrados": ", ".join(
                         sorted(items_d)
                     ),
