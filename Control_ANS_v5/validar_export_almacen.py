@@ -1479,6 +1479,338 @@ print(
     "🚨 Alertas por actividad encontradas: "
     f"{len(df_alerta_actividades)}"
 )
+
+# ============================================================
+# HOJA NUEVA: ALERTA_LEGALIZACIONES
+#
+# RESPONSABILIDAD EXCLUSIVA:
+# Validar que determinados item_cont de legalización
+# no tengan cantidad mayor a 1.
+#
+# Ítems controlados:
+# C01U, C01R, C02U, C02R, C03U, C03R,
+# C04U, C04R, C05U, C05R, C07U, C07R
+#
+# Regla:
+# - cantidad <= 1 -> OK
+# - cantidad > 1  -> ALERTA
+# ============================================================
+
+def validar_alerta_legalizaciones(df_export_in):
+
+    columnas_salida = [
+        "pedido",
+        "subzona",
+        "item_cont",
+        "cantidad",
+        "tipo_alerta",
+        "detalle",
+    ]
+
+    columnas_requeridas = {
+        "pedido",
+        "subz",
+        "item_cont",
+        "cantidad",
+    }
+
+    columnas_faltantes = (
+        columnas_requeridas
+        - set(df_export_in.columns)
+    )
+
+    if columnas_faltantes:
+        print(
+            "⚠️ No se pudo ejecutar ALERTA_LEGALIZACIONES. "
+            f"Faltan columnas: {sorted(columnas_faltantes)}"
+        )
+
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df = df_export_in.copy()
+
+    df["pedido"] = (
+        df["pedido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    df["subz"] = (
+        df["subz"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["item_cont"] = (
+        df["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["CANT_NUM"] = pd.to_numeric(
+        df["cantidad"]
+        .fillna("")
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.strip(),
+        errors="coerce"
+    )
+
+    items_legalizacion = {
+        "C01U", "C01R",
+        "C02U", "C02R",
+        "C03U", "C03R",
+        "C04U", "C04R",
+        "C05U", "C05R",
+        "C07U", "C07R",
+    }
+
+    df_alerta = df[
+        df["item_cont"].isin(items_legalizacion)
+        & (df["CANT_NUM"] > 1)
+    ].copy()
+
+    if df_alerta.empty:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df_alerta["cantidad"] = df_alerta["CANT_NUM"]
+    df_alerta["tipo_alerta"] = "CANTIDAD MAYOR A 1"
+
+    df_alerta["detalle"] = df_alerta.apply(
+        lambda r: (
+            f"El ítem {r['item_cont']} tiene cantidad "
+            f"{r['CANT_NUM']:g}. Para esta legalización "
+            "la cantidad no debe ser mayor a 1."
+        ),
+        axis=1
+    )
+
+    df_alerta = (
+        df_alerta
+        .rename(columns={"subz": "subzona"})
+        .sort_values(
+            by=["subzona", "pedido", "item_cont"],
+            kind="stable"
+        )
+        .reset_index(drop=True)
+    )
+
+    return df_alerta[
+        columnas_salida
+    ]
+
+
+df_alerta_legalizaciones = (
+    validar_alerta_legalizaciones(
+        df_export
+    )
+)
+
+print(
+    "🚨 Alertas de legalizaciones encontradas: "
+    f"{len(df_alerta_legalizaciones)}"
+)
+
+
+
+# ============================================================
+# HOJA NUEVA: MASIVAS
+#
+# RESPONSABILIDAD EXCLUSIVA:
+# Validar consistencia de item_cont para una misma pagina_base.
+#
+# Regla de negocio:
+# - pagina_base = primeros 14 dígitos de pagina
+# - Aplica cuando dentro del grupo existe al menos uno de estos:
+#   C02U, C02R, C03U, C03R, C04U, C04R
+# - Para una misma pagina_base, todos los item_cont deben ser iguales.
+# - Si aparece más de un item_cont diferente, genera alerta.
+#
+# Salida:
+# pedido, subzona, pagina, pagina_base, item_cont,
+# items_encontrados, tipo_alerta, detalle
+# ============================================================
+
+def validar_masivas(df_export_in):
+
+    columnas_salida = [
+        "pedido",
+        "subzona",
+        "pagina",
+        "pagina_base",
+        "item_cont",
+        "items_encontrados",
+        "tipo_alerta",
+        "detalle",
+    ]
+
+    columnas_requeridas = {
+        "pedido",
+        "subz",
+        "pagina",
+        "item_cont",
+    }
+
+    columnas_faltantes = columnas_requeridas - set(df_export_in.columns)
+
+    if columnas_faltantes:
+        print(
+            "⚠️ No se pudo ejecutar MASIVAS. "
+            f"Faltan columnas: {sorted(columnas_faltantes)}"
+        )
+        return pd.DataFrame(columns=columnas_salida)
+
+    df = df_export_in.copy()
+
+    if "tipo" in df.columns:
+        df["tipo"] = (
+            df["tipo"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+        df = df[df["tipo"].eq("CON")].copy()
+
+    df["pedido"] = (
+        df["pedido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    df["subz"] = (
+        df["subz"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["pagina"] = (
+        df["pagina"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+    df["item_cont"] = (
+        df["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    mask_pagina_valida = df["pagina"].str.match(r"^\d{14,}$", na=False)
+
+    df = df[
+        mask_pagina_valida
+        & df["item_cont"].ne("")
+    ].copy()
+
+    if df.empty:
+        return pd.DataFrame(columns=columnas_salida)
+
+    df["pagina_base"] = df["pagina"].str[:14]
+
+    items_controlados = {
+        "C02U", "C02R",
+        "C03U", "C03R",
+        "C04U", "C04R",
+    }
+
+    bases_aplicables = set(
+        df.loc[
+            df["item_cont"].isin(items_controlados),
+            "pagina_base"
+        ]
+    )
+
+    if not bases_aplicables:
+        return pd.DataFrame(columns=columnas_salida)
+
+    df_aplica = df[
+        df["pagina_base"].isin(bases_aplicables)
+    ].copy()
+
+    items_por_base = (
+        df_aplica
+        .groupby("pagina_base")["item_cont"]
+        .apply(lambda s: sorted(set(x for x in s if x)))
+    )
+
+    bases_inconsistentes = {
+        pagina_base: items
+        for pagina_base, items in items_por_base.items()
+        if len(items) > 1
+    }
+
+    if not bases_inconsistentes:
+        return pd.DataFrame(columns=columnas_salida)
+
+    df_alerta = df_aplica[
+        df_aplica["pagina_base"].isin(bases_inconsistentes.keys())
+    ].copy()
+
+    df_alerta["items_encontrados"] = (
+        df_alerta["pagina_base"]
+        .map(
+            lambda base: ", ".join(
+                bases_inconsistentes[base]
+            )
+        )
+    )
+
+    df_alerta["tipo_alerta"] = "ITEM_CONT_INCONSISTENTE"
+
+    df_alerta["detalle"] = df_alerta.apply(
+        lambda r: (
+            f"La página base {r['pagina_base']} presenta "
+            f"más de un item_cont: {r['items_encontrados']}. "
+            "Para los primeros 14 dígitos de la página, "
+            "el item_cont debe ser igual."
+        ),
+        axis=1
+    )
+
+    df_alerta = (
+        df_alerta
+        .rename(columns={"subz": "subzona"})
+        .sort_values(
+            by=[
+                "subzona",
+                "pagina_base",
+                "pagina",
+                "pedido",
+                "item_cont",
+            ],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+
+    return df_alerta[columnas_salida]
+
+
+df_masivas = validar_masivas(df_export)
+
+print(
+    "🚨 Alertas MASIVAS encontradas: "
+    f"{len(df_masivas)}"
+)
+
+
 # ============================================================
 # EXPORTAR RESULTADO
 # ============================================================
@@ -1521,6 +1853,18 @@ with pd.ExcelWriter(
         sheet_name="ALERTA_ACTIVIDADES",
         index=False
         )
+
+    df_alerta_legalizaciones.to_excel(
+        writer,
+        sheet_name="ALERTA_LEGALIZACIONES",
+        index=False
+    )
+
+    df_masivas.to_excel(
+        writer,
+        sheet_name="MASIVAS",
+        index=False
+    )
 # ============================================================
 # FORMATO PROFESIONAL DEL EXCEL (NO TOCA LÓGICA)
 # ============================================================
@@ -1542,6 +1886,16 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
     wb[
         "ALERTA_ACTIVIDADES"
     ].sheet_properties.tabColor = "0070C0"
+
+if "ALERTA_LEGALIZACIONES" in wb.sheetnames:
+    wb[
+        "ALERTA_LEGALIZACIONES"
+    ].sheet_properties.tabColor = "00B050"
+
+if "MASIVAS" in wb.sheetnames:
+    wb[
+        "MASIVAS"
+    ].sheet_properties.tabColor = "5B9BD5"
 
 ws = wb["VALIDACION"]
 
@@ -2011,6 +2365,203 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
                 vertical="center",
                 wrap_text=True
             )
+
+
+# ============================================================
+# FORMATO HOJA ALERTA_LEGALIZACIONES
+# ============================================================
+
+if "ALERTA_LEGALIZACIONES" in wb.sheetnames:
+
+    ws_leg = wb["ALERTA_LEGALIZACIONES"]
+
+    ws_leg.freeze_panes = "A2"
+    ws_leg.auto_filter.ref = ws_leg.dimensions
+
+    fill_verde = PatternFill(
+        "solid",
+        fgColor="00B050"
+    )
+
+    font_blanco = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    fill_alerta_leg = PatternFill(
+        "solid",
+        fgColor="E2F0D9"
+    )
+
+    align_center = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for cell in ws_leg[1]:
+        cell.fill = fill_verde
+        cell.font = font_blanco
+        cell.alignment = align_center
+
+    for fila in ws_leg.iter_rows(
+        min_row=2,
+        max_row=ws_leg.max_row,
+        min_col=1,
+        max_col=ws_leg.max_column
+    ):
+        for celda in fila:
+            celda.fill = fill_alerta_leg
+
+    encabezados_leg = {
+        cell.value: idx + 1
+        for idx, cell in enumerate(ws_leg[1])
+    }
+
+    col_cantidad_leg = encabezados_leg.get(
+        "cantidad"
+    )
+
+    if col_cantidad_leg:
+
+        fill_rojo = PatternFill(
+            "solid",
+            fgColor="C00000"
+        )
+
+        for fila in range(
+            2,
+            ws_leg.max_row + 1
+        ):
+            celda = ws_leg.cell(
+                row=fila,
+                column=col_cantidad_leg
+            )
+
+            celda.fill = fill_rojo
+            celda.font = font_blanco
+
+    for columna in ws_leg.columns:
+
+        max_length = 0
+        letra = get_column_letter(
+            columna[0].column
+        )
+
+        for cell in columna:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+
+        ws_leg.column_dimensions[
+            letra
+        ].width = min(
+            max_length + 5,
+            70
+        )
+
+    for fila in ws_leg.iter_rows(
+        min_row=2
+    ):
+        for celda in fila:
+            celda.alignment = Alignment(
+                vertical="center",
+                wrap_text=True
+            )
+
+
+
+# ============================================================
+# FORMATO HOJA MASIVAS
+# ============================================================
+
+if "MASIVAS" in wb.sheetnames:
+
+    ws_mas = wb["MASIVAS"]
+
+    ws_mas.freeze_panes = "A2"
+    ws_mas.auto_filter.ref = ws_mas.dimensions
+
+    fill_azul_mas = PatternFill(
+        "solid",
+        fgColor="5B9BD5"
+    )
+
+    font_blanco = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    fill_alerta_mas = PatternFill(
+        "solid",
+        fgColor="DDEBF7"
+    )
+
+    align_center = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for cell in ws_mas[1]:
+        cell.fill = fill_azul_mas
+        cell.font = font_blanco
+        cell.alignment = align_center
+
+    for fila in ws_mas.iter_rows(
+        min_row=2,
+        max_row=ws_mas.max_row,
+        min_col=1,
+        max_col=ws_mas.max_column
+    ):
+        for celda in fila:
+            celda.fill = fill_alerta_mas
+
+    encabezados_mas = {
+        cell.value: idx + 1
+        for idx, cell in enumerate(ws_mas[1])
+    }
+
+    col_item_mas = encabezados_mas.get("item_cont")
+
+    if col_item_mas:
+        fill_rojo = PatternFill(
+            "solid",
+            fgColor="C00000"
+        )
+
+        for fila in range(2, ws_mas.max_row + 1):
+            celda = ws_mas.cell(
+                row=fila,
+                column=col_item_mas
+            )
+            celda.fill = fill_rojo
+            celda.font = font_blanco
+
+    for columna in ws_mas.columns:
+
+        max_length = 0
+        letra = get_column_letter(columna[0].column)
+
+        for cell in columna:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+
+        ws_mas.column_dimensions[letra].width = min(
+            max_length + 5,
+            75
+        )
+
+    for fila in ws_mas.iter_rows(min_row=2):
+        for celda in fila:
+            celda.alignment = Alignment(
+                vertical="center",
+                wrap_text=True
+            )
+
 
 wb.save(archivo)
 
