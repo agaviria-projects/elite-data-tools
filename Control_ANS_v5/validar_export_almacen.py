@@ -1722,6 +1722,7 @@ def validar_masivas(df_export_in):
     if df.empty:
         return pd.DataFrame(columns=columnas_salida)
 
+    # Extracción real de los primeros 14 dígitos
     df["pagina_base"] = df["pagina"].str[:14]
 
     items_controlados = {
