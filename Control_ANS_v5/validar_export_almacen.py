@@ -617,7 +617,7 @@ df_resultado["DETALLE_CANTIDAD"] = df_resultado["DETALLE_CANTIDAD"].fillna("")
 
 # ============================================================
 # 🆕 ALERTAS ADICIONALES (NO TOCA LÓGICA EXISTENTE)
-# 1) Duplicados de Mano de Obra por pedido (ej: mismo pedido con 2 C01)
+# 1) Duplicados de Mano de Obra por pedido (incluye A, B, C y D)
 # 2) Para MO que comiencen con A: si cantidad > 1 => alerta (igual lógica que Cxx)
 # ============================================================
 
@@ -625,7 +625,7 @@ def _alerta_duplicados_mo(df_export_in):
     """
     Detecta duplicados de MO_BASE por pedido + subz.
     Aplica para cualquier mano de obra:
-    Axx, Bxx, Cxx, B15R, B17R, etc.
+    Axx, Bxx, Cxx, Dxx, B15R, B17R, etc.
     """
 
     df_con = df_export_in[
@@ -755,7 +755,95 @@ def _alertas_cantidad_prefijo(df_export_in, prefijo="A"):
     return out[["pedido", "subzona", "mano_obra", "ALERTA_CANTIDAD_A", "DETALLE_CANTIDAD_A"]]
 
 
-# --- 1) Ejecutar alerta duplicados (solo C por defecto)
+def _alertas_cantidad_d(df_export_in):
+    """
+    Detecta cantidad > 1 únicamente para las MO D01-D04,
+    tanto urbanas como rurales.
+    """
+    items_d_controlados = {
+        "D01U", "D01R",
+        "D02U", "D02R",
+        "D03U", "D03R",
+        "D04U", "D04R",
+    }
+
+    df_con = df_export_in[
+        df_export_in["tipo"] == "CON"
+    ].copy()
+
+    df_con["MO_BASE"] = (
+        df_con["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    if "cantidad" in df_con.columns:
+        df_con["CANT_NUM"] = pd.to_numeric(
+            df_con["cantidad"]
+            .fillna("")
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.strip(),
+            errors="coerce"
+        ).fillna(0)
+    else:
+        df_con["CANT_NUM"] = 0
+
+    df_alert = df_con[
+        df_con["pedido"].notna()
+        & df_con["subz"].notna()
+        & df_con["MO_BASE"].isin(items_d_controlados)
+        & (df_con["CANT_NUM"] > 1)
+    ][
+        ["pedido", "subz", "MO_BASE", "CANT_NUM"]
+    ].copy()
+
+    if df_alert.empty:
+        return pd.DataFrame(
+            columns=[
+                "pedido",
+                "subzona",
+                "mano_obra",
+                "ALERTA_CANTIDAD_D",
+                "DETALLE_CANTIDAD_D",
+            ]
+        )
+
+    df_alert["DET"] = df_alert.apply(
+        lambda r: f"{r['MO_BASE']}={r['CANT_NUM']:g}",
+        axis=1
+    )
+
+    out = (
+        df_alert
+        .groupby(["pedido", "subz", "MO_BASE"])["DET"]
+        .apply(lambda x: ", ".join(sorted(set(x))))
+        .reset_index()
+        .rename(
+            columns={
+                "subz": "subzona",
+                "MO_BASE": "mano_obra",
+            }
+        )
+    )
+
+    out["ALERTA_CANTIDAD_D"] = "CANTIDAD_D>1"
+    out["DETALLE_CANTIDAD_D"] = out["DET"]
+
+    return out[
+        [
+            "pedido",
+            "subzona",
+            "mano_obra",
+            "ALERTA_CANTIDAD_D",
+            "DETALLE_CANTIDAD_D",
+        ]
+    ]
+
+
+# --- 1) Ejecutar alerta de duplicados para cualquier MO tipo CON
 df_dup_mo = _alerta_duplicados_mo(
     df_export
 )
@@ -797,7 +885,38 @@ df_resultado["ALERTA_CANTIDAD_A"] = df_resultado["ALERTA_CANTIDAD_A"].fillna("")
 df_resultado["DETALLE_CANTIDAD_A"] = df_resultado["DETALLE_CANTIDAD_A"].fillna("")
 
 
-# --- 3) Si hay alerta Axx cantidad>1: estado = novedad cantidades (sin borrar estado_codigo)
+# --- 3) Ejecutar alerta cantidad>1 para D01-D04 (U/R)
+df_alertas_d = _alertas_cantidad_d(df_export)
+
+if not df_alertas_d.empty:
+    df_resultado = df_resultado.merge(
+        df_alertas_d,
+        on=["pedido", "subzona", "mano_obra"],
+        how="left"
+    )
+else:
+    df_resultado["ALERTA_CANTIDAD_D"] = ""
+    df_resultado["DETALLE_CANTIDAD_D"] = ""
+
+df_resultado["ALERTA_CANTIDAD_D"] = (
+    df_resultado["ALERTA_CANTIDAD_D"].fillna("")
+)
+df_resultado["DETALLE_CANTIDAD_D"] = (
+    df_resultado["DETALLE_CANTIDAD_D"].fillna("")
+)
+
+mask_alert_d = df_resultado["ALERTA_CANTIDAD_D"].eq(
+    "CANTIDAD_D>1"
+)
+df_resultado.loc[
+    mask_alert_d,
+    "estado"
+] = "Presenta novedad en las cantidades (D)"
+df_resultado.loc[mask_alert_d, "faltantes"] = ""
+df_resultado.loc[mask_alert_d, "sobrantes"] = ""
+
+
+# --- 4) Si hay alerta Axx cantidad>1: estado = novedad cantidades (sin borrar estado_codigo)
 mask_alert_a = df_resultado["ALERTA_CANTIDAD_A"].eq("CANTIDAD_A>1")
 df_resultado.loc[mask_alert_a, "estado"] = "Presenta novedad en las cantidades (A)"
 df_resultado.loc[mask_alert_a, "faltantes"] = ""
@@ -847,6 +966,7 @@ COLUMNAS_SALIDA = [
     "faltantes",
     "ALERTA_CANTIDAD", "DETALLE_CANTIDAD",
     "ALERTA_CANTIDAD_A", "DETALLE_CANTIDAD_A",
+    "ALERTA_CANTIDAD_D", "DETALLE_CANTIDAD_D",
     "ALERTA_DUPLICADO_MO", "DETALLE_DUPLICADO_MO",
     "sobrantes"
 ]
@@ -862,6 +982,8 @@ df_resultado = df_resultado.rename(columns={
     "DETALLE_DUPLICADO_MO": "detalle_duplicado_MO",
     "ALERTA_CANTIDAD_A": "alerta_cantidad_A",
     "DETALLE_CANTIDAD_A": "detalle_cantidad_A",
+    "ALERTA_CANTIDAD_D": "alerta_cantidad_D",
+    "DETALLE_CANTIDAD_D": "detalle_cantidad_D",
 })
 # ============================================================
 # HOJA DUPLICADOS MO
@@ -1182,6 +1304,14 @@ print(
 #   - Debe tener D01U Y D01R
 #   - Cualquier otro D genera alerta
 #
+# ACAMN y ALECA:
+#   - Deben tener C05U o C05R
+#   - Cualquier item_cont diferente genera alerta
+#
+# ALEGA y ALEGN:
+#   - Deben tener uno de C01U/R, C02U/R, C03U/R o C04U/R
+#   - Cualquier item_cont diferente genera alerta
+#
 # AEJDO:
 #   - Debe tener:
 #       CALE1F
@@ -1417,6 +1547,139 @@ def validar_reglas_actividades(df_export_in):
                 })
 
         # ====================================================
+        # ACAMN / ALECA
+        # Código obligatorio válido: C05U o C05R
+        # ====================================================
+
+        elif actividad in {"ACAMN", "ALECA"}:
+
+            permitidos = {
+                "C05U",
+                "C05R",
+            }
+
+            items_validos = sorted(
+                items_cont & permitidos
+            )
+
+            no_permitidos = sorted(
+                items_cont - permitidos
+            )
+
+            faltantes = []
+
+            if not items_validos:
+                faltantes.append(
+                    "C05U o C05R"
+                )
+
+            if faltantes or no_permitidos:
+
+                detalle = []
+
+                if faltantes:
+                    detalle.append(
+                        f"Falta ítem válido para {actividad}"
+                    )
+
+                if no_permitidos:
+                    detalle.append(
+                        "ERROR EN DIGITACIÓN: "
+                        + ", ".join(no_permitidos)
+                    )
+
+                resultados.append({
+                    "pedido": pedido,
+                    "subzona": subzona,
+                    "actividad": actividad,
+                    "tipo_alerta": (
+                        "ERROR EN DIGITACIÓN"
+                        if no_permitidos
+                        else "FALTA ÍTEM VÁLIDO"
+                    ),
+                    "items_encontrados": ", ".join(
+                        sorted(items_cont)
+                    ),
+                    "items_faltantes": ", ".join(
+                        faltantes
+                    ),
+                    "items_no_permitidos": ", ".join(
+                        no_permitidos
+                    ),
+                    "detalle": " | ".join(
+                        detalle
+                    ),
+                })
+
+        # ====================================================
+        # ALEGA / ALEGN
+        # Debe existir uno de C01-C04, en versión U o R
+        # ====================================================
+
+        elif actividad in {"ALEGA", "ALEGN"}:
+
+            permitidos = {
+                "C01U", "C01R",
+                "C02U", "C02R",
+                "C03U", "C03R",
+                "C04U", "C04R",
+            }
+
+            items_validos = sorted(
+                items_cont & permitidos
+            )
+
+            no_permitidos = sorted(
+                items_cont - permitidos
+            )
+
+            faltantes = []
+
+            if not items_validos:
+                faltantes.append(
+                    "C01U/C01R o C02U/C02R o "
+                    "C03U/C03R o C04U/C04R"
+                )
+
+            if faltantes or no_permitidos:
+
+                detalle = []
+
+                if faltantes:
+                    detalle.append(
+                        f"Falta ítem válido para {actividad}"
+                    )
+
+                if no_permitidos:
+                    detalle.append(
+                        "ERROR EN DIGITACIÓN: "
+                        + ", ".join(no_permitidos)
+                    )
+
+                resultados.append({
+                    "pedido": pedido,
+                    "subzona": subzona,
+                    "actividad": actividad,
+                    "tipo_alerta": (
+                        "ERROR EN DIGITACIÓN"
+                        if no_permitidos
+                        else "FALTA ÍTEM VÁLIDO"
+                    ),
+                    "items_encontrados": ", ".join(
+                        sorted(items_cont)
+                    ),
+                    "items_faltantes": ", ".join(
+                        faltantes
+                    ),
+                    "items_no_permitidos": ", ".join(
+                        no_permitidos
+                    ),
+                    "detalle": " | ".join(
+                        detalle
+                    ),
+                })
+
+        # ====================================================
         # AEJDO
         # ====================================================
 
@@ -1481,22 +1744,22 @@ print(
 )
 
 # ============================================================
-# HOJA NUEVA: ALERTA_LEGALIZACIONES
+# HOJA NUEVA: ALERTA_CANTIDADES_MO
 #
 # RESPONSABILIDAD EXCLUSIVA:
-# Validar que determinados item_cont de legalización
-# no tengan cantidad mayor a 1.
-#
-# Ítems controlados:
-# C01U, C01R, C02U, C02R, C03U, C03R,
-# C04U, C04R, C05U, C05R, C07U, C07R
+# Identificar cantidades mayores a 1 en manos de obra.
 #
 # Regla:
-# - cantidad <= 1 -> OK
-# - cantidad > 1  -> ALERTA
+# - tipo = CON
+# - item_cont comienza por A o C
+# - o corresponde a D01-D04, en versión U o R
+# - cantidad > 1 -> ALERTA
+#
+# La alerta requiere revisión del analista y no significa
+# automáticamente que exista un error.
 # ============================================================
 
-def validar_alerta_legalizaciones(df_export_in):
+def validar_alerta_cantidades_mo(df_export_in):
 
     columnas_salida = [
         "pedido",
@@ -1510,6 +1773,7 @@ def validar_alerta_legalizaciones(df_export_in):
     columnas_requeridas = {
         "pedido",
         "subz",
+        "tipo",
         "item_cont",
         "cantidad",
     }
@@ -1521,7 +1785,7 @@ def validar_alerta_legalizaciones(df_export_in):
 
     if columnas_faltantes:
         print(
-            "⚠️ No se pudo ejecutar ALERTA_LEGALIZACIONES. "
+            "⚠️ No se pudo ejecutar ALERTA_CANTIDADES_MO. "
             f"Faltan columnas: {sorted(columnas_faltantes)}"
         )
 
@@ -1546,6 +1810,14 @@ def validar_alerta_legalizaciones(df_export_in):
         .str.strip()
     )
 
+    df["tipo"] = (
+        df["tipo"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
     df["item_cont"] = (
         df["item_cont"]
         .fillna("")
@@ -1563,17 +1835,29 @@ def validar_alerta_legalizaciones(df_export_in):
         errors="coerce"
     )
 
-    items_legalizacion = {
-        "C01U", "C01R",
-        "C02U", "C02R",
-        "C03U", "C03R",
-        "C04U", "C04R",
-        "C05U", "C05R",
-        "C07U", "C07R",
+    # ========================================================
+    # REGLA:
+    # - Solo Mano de Obra: tipo = CON
+    # - item_cont comienza por A o C
+    # - o corresponde a D01-D04, en versión U o R
+    # - cantidad mayor a 1
+    # ========================================================
+
+    items_d_controlados = {
+        "D01U", "D01R",
+        "D02U", "D02R",
+        "D03U", "D03R",
+        "D04U", "D04R",
     }
 
+    mask_mo_controlada = (
+        df["item_cont"].str.startswith(("A", "C"))
+        | df["item_cont"].isin(items_d_controlados)
+    )
+
     df_alerta = df[
-        df["item_cont"].isin(items_legalizacion)
+        df["tipo"].eq("CON")
+        & mask_mo_controlada
         & (df["CANT_NUM"] > 1)
     ].copy()
 
@@ -1583,13 +1867,12 @@ def validar_alerta_legalizaciones(df_export_in):
         )
 
     df_alerta["cantidad"] = df_alerta["CANT_NUM"]
-    df_alerta["tipo_alerta"] = "CANTIDAD MAYOR A 1"
+    df_alerta["tipo_alerta"] = "CANTIDAD_MO>1"
 
     df_alerta["detalle"] = df_alerta.apply(
         lambda r: (
-            f"El ítem {r['item_cont']} tiene cantidad "
-            f"{r['CANT_NUM']:g}. Para esta legalización "
-            "la cantidad no debe ser mayor a 1."
+            f"La mano de obra {r['item_cont']} tiene cantidad "
+            f"{r['CANT_NUM']:g}. Requiere revisión del analista."
         ),
         axis=1
     )
@@ -1609,35 +1892,35 @@ def validar_alerta_legalizaciones(df_export_in):
     ]
 
 
-df_alerta_legalizaciones = (
-    validar_alerta_legalizaciones(
+df_alerta_cantidades_mo = (
+    validar_alerta_cantidades_mo(
         df_export
     )
 )
 
 print(
-    "🚨 Alertas de legalizaciones encontradas: "
-    f"{len(df_alerta_legalizaciones)}"
+    "🚨 Alertas de cantidades de Mano de Obra encontradas: "
+    f"{len(df_alerta_cantidades_mo)}"
 )
-
-
 
 # ============================================================
 # HOJA NUEVA: MASIVAS
 #
 # RESPONSABILIDAD EXCLUSIVA:
-# Validar consistencia de item_cont para una misma pagina_base.
+# Validar que el item_cont corresponda a la cantidad de
+# instalaciones agrupadas por pagina_base.
 #
 # Regla de negocio:
 # - pagina_base = primeros 14 dígitos de pagina
-# - Aplica cuando dentro del grupo existe al menos uno de estos:
-#   C02U, C02R, C03U, C03R, C04U, C04R
-# - Para una misma pagina_base, todos los item_cont deben ser iguales.
-# - Si aparece más de un item_cont diferente, genera alerta.
+# - 1 instalación: C01U o C01R
+# - 2 a 12 instalaciones: C02U o C02R
+# - 13 a 24 instalaciones: C03U o C03R
+# - 25 instalaciones en adelante: C04U o C04R
+# - U/R no cambia el rango correspondiente.
 #
 # Salida:
-# pedido, subzona, pagina, pagina_base, item_cont,
-# items_encontrados, tipo_alerta, detalle
+# pedido, subzona, pagina, pagina_base, cantidad_instalaciones,
+# item_cont, items_encontrados, item_esperado, tipo_alerta, detalle
 # ============================================================
 
 def validar_masivas(df_export_in):
@@ -1647,8 +1930,10 @@ def validar_masivas(df_export_in):
         "subzona",
         "pagina",
         "pagina_base",
+        "cantidad_instalaciones",
         "item_cont",
         "items_encontrados",
+        "item_esperado",
         "tipo_alerta",
         "detalle",
     ]
@@ -1726,61 +2011,131 @@ def validar_masivas(df_export_in):
     df["pagina_base"] = df["pagina"].str[:14]
 
     items_controlados = {
+        "C01U", "C01R",
         "C02U", "C02R",
         "C03U", "C03R",
         "C04U", "C04R",
     }
 
-    bases_aplicables = set(
+    claves_aplicables = set(
         df.loc[
             df["item_cont"].isin(items_controlados),
-            "pagina_base"
-        ]
+            ["subz", "pagina_base"]
+        ].itertuples(index=False, name=None)
     )
 
-    if not bases_aplicables:
+    if not claves_aplicables:
         return pd.DataFrame(columns=columnas_salida)
 
-    df_aplica = df[
-        df["pagina_base"].isin(bases_aplicables)
-    ].copy()
+    alertas_por_base = {}
 
-    items_por_base = (
-        df_aplica
-        .groupby("pagina_base")["item_cont"]
-        .apply(lambda s: sorted(set(x for x in s if x)))
-    )
+    for (subzona, pagina_base), grupo in df.groupby(
+        ["subz", "pagina_base"]
+    ):
+        clave = (subzona, pagina_base)
 
-    bases_inconsistentes = {
-        pagina_base: items
-        for pagina_base, items in items_por_base.items()
-        if len(items) > 1
-    }
+        if clave not in claves_aplicables:
+            continue
 
-    if not bases_inconsistentes:
-        return pd.DataFrame(columns=columnas_salida)
-
-    df_alerta = df_aplica[
-        df_aplica["pagina_base"].isin(bases_inconsistentes.keys())
-    ].copy()
-
-    df_alerta["items_encontrados"] = (
-        df_alerta["pagina_base"]
-        .map(
-            lambda base: ", ".join(
-                bases_inconsistentes[base]
-            )
+        cantidad_instalaciones = int(
+            grupo["pagina"].nunique()
         )
+
+        if cantidad_instalaciones == 1:
+            codigo_esperado = "C01"
+        elif cantidad_instalaciones <= 12:
+            codigo_esperado = "C02"
+        elif cantidad_instalaciones <= 24:
+            codigo_esperado = "C03"
+        else:
+            codigo_esperado = "C04"
+
+        items_esperados = {
+            f"{codigo_esperado}U",
+            f"{codigo_esperado}R",
+        }
+
+        items_encontrados = {
+            item
+            for item in grupo["item_cont"]
+            if item in items_controlados
+        }
+
+        items_no_corresponden = (
+            items_encontrados - items_esperados
+        )
+
+        tiene_item_esperado = bool(
+            items_encontrados & items_esperados
+        )
+
+        if items_no_corresponden or not tiene_item_esperado:
+            alertas_por_base[clave] = {
+                "cantidad_instalaciones": cantidad_instalaciones,
+                "items_encontrados": ", ".join(
+                    sorted(items_encontrados)
+                ),
+                "item_esperado": (
+                    f"{codigo_esperado}U o {codigo_esperado}R"
+                ),
+            }
+
+    if not alertas_por_base:
+        return pd.DataFrame(columns=columnas_salida)
+
+    mask_alerta = df.apply(
+        lambda r: (
+            r["subz"],
+            r["pagina_base"]
+        ) in alertas_por_base,
+        axis=1
     )
 
-    df_alerta["tipo_alerta"] = "ITEM_CONT_INCONSISTENTE"
+    df_alerta = df[
+        mask_alerta
+        & df["item_cont"].isin(items_controlados)
+    ].copy()
+
+    def obtener_dato_alerta(fila, campo):
+        return alertas_por_base[
+            (fila["subz"], fila["pagina_base"])
+        ][campo]
+
+    df_alerta["cantidad_instalaciones"] = df_alerta.apply(
+        lambda r: obtener_dato_alerta(
+            r,
+            "cantidad_instalaciones"
+        ),
+        axis=1
+    )
+
+    df_alerta["items_encontrados"] = df_alerta.apply(
+        lambda r: obtener_dato_alerta(
+            r,
+            "items_encontrados"
+        ),
+        axis=1
+    )
+
+    df_alerta["item_esperado"] = df_alerta.apply(
+        lambda r: obtener_dato_alerta(
+            r,
+            "item_esperado"
+        ),
+        axis=1
+    )
+
+    df_alerta["tipo_alerta"] = (
+        "ITEM_CONT_NO_CORRESPONDE_CANTIDAD"
+    )
 
     df_alerta["detalle"] = df_alerta.apply(
         lambda r: (
-            f"La página base {r['pagina_base']} presenta "
-            f"más de un item_cont: {r['items_encontrados']}. "
-            "Para los primeros 14 dígitos de la página, "
-            "el item_cont debe ser igual."
+            f"La página base {r['pagina_base']} agrupa "
+            f"{r['cantidad_instalaciones']} instalación(es). "
+            f"Se encontró {r['items_encontrados']} y corresponde "
+            f"usar {r['item_esperado']}, independientemente "
+            "de que sea urbano o rural."
         ),
         axis=1
     )
@@ -1855,9 +2210,9 @@ with pd.ExcelWriter(
         index=False
         )
 
-    df_alerta_legalizaciones.to_excel(
+    df_alerta_cantidades_mo.to_excel(
         writer,
-        sheet_name="ALERTA_LEGALIZACIONES",
+        sheet_name="ALERTA_CANTIDADES_MO",
         index=False
     )
 
@@ -1888,9 +2243,9 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
         "ALERTA_ACTIVIDADES"
     ].sheet_properties.tabColor = "0070C0"
 
-if "ALERTA_LEGALIZACIONES" in wb.sheetnames:
+if "ALERTA_CANTIDADES_MO" in wb.sheetnames:
     wb[
-        "ALERTA_LEGALIZACIONES"
+        "ALERTA_CANTIDADES_MO"
     ].sheet_properties.tabColor = "00B050"
 
 if "MASIVAS" in wb.sheetnames:
@@ -1956,6 +2311,21 @@ if col_alerta_a and col_detalle_a:
         v = ws.cell(row=r, column=col_alerta_a).value
         if str(v).strip().upper() == "CANTIDAD_A>1":
             c = ws.cell(row=r, column=col_detalle_a)
+            c.fill = fill_rojo
+            c.font = font_blanco
+
+# --- Pintar en rojo detalle_cantidad_D cuando haya CANTIDAD_D>1
+col_alerta_d = headers.get("alerta_cantidad_D")
+col_detalle_d = headers.get("detalle_cantidad_D")
+
+if col_alerta_d and col_detalle_d:
+    fill_rojo = PatternFill("solid", fgColor="FF0000")
+    font_blanco = Font(color="FFFFFF", bold=True)
+
+    for r in range(2, ws.max_row + 1):
+        v = ws.cell(row=r, column=col_alerta_d).value
+        if str(v).strip().upper() == "CANTIDAD_D>1":
+            c = ws.cell(row=r, column=col_detalle_d)
             c.fill = fill_rojo
             c.font = font_blanco
 
@@ -2369,12 +2739,12 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
 
 
 # ============================================================
-# FORMATO HOJA ALERTA_LEGALIZACIONES
+# FORMATO HOJA ALERTA_CANTIDADES_MO
 # ============================================================
 
-if "ALERTA_LEGALIZACIONES" in wb.sheetnames:
+if "ALERTA_CANTIDADES_MO" in wb.sheetnames:
 
-    ws_leg = wb["ALERTA_LEGALIZACIONES"]
+    ws_leg = wb["ALERTA_CANTIDADES_MO"]
 
     ws_leg.freeze_panes = "A2"
     ws_leg.auto_filter.ref = ws_leg.dimensions
@@ -2524,6 +2894,12 @@ if "MASIVAS" in wb.sheetnames:
     }
 
     col_item_mas = encabezados_mas.get("item_cont")
+    col_cantidad_mas = encabezados_mas.get(
+        "cantidad_instalaciones"
+    )
+    col_esperado_mas = encabezados_mas.get(
+        "item_esperado"
+    )
 
     if col_item_mas:
         fill_rojo = PatternFill(
@@ -2538,6 +2914,40 @@ if "MASIVAS" in wb.sheetnames:
             )
             celda.fill = fill_rojo
             celda.font = font_blanco
+
+    if col_cantidad_mas:
+        fill_amarillo = PatternFill(
+            "solid",
+            fgColor="FFF2CC"
+        )
+
+        for fila in range(2, ws_mas.max_row + 1):
+            celda = ws_mas.cell(
+                row=fila,
+                column=col_cantidad_mas
+            )
+            celda.fill = fill_amarillo
+            celda.font = Font(
+                color="000000",
+                bold=True
+            )
+
+    if col_esperado_mas:
+        fill_verde_claro = PatternFill(
+            "solid",
+            fgColor="E2F0D9"
+        )
+
+        for fila in range(2, ws_mas.max_row + 1):
+            celda = ws_mas.cell(
+                row=fila,
+                column=col_esperado_mas
+            )
+            celda.fill = fill_verde_claro
+            celda.font = Font(
+                color="006100",
+                bold=True
+            )
 
     for columna in ws_mas.columns:
 
