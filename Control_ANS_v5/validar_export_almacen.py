@@ -1315,9 +1315,9 @@ print(
 # AEJDO:
 #   - Debe tener:
 #       CALE1F
-#       A12U
-#       A18U
-#       A19U
+#       A12U o A12R
+#       A18U o A18R
+#       A19U o A19R
 #
 # Esta hoja NO valida Rural/Urbano.
 # ============================================================
@@ -1685,20 +1685,33 @@ def validar_reglas_actividades(df_export_in):
 
         elif actividad == "AEJDO":
 
-            obligatorios = {
-                "CALE1F",
-                "A12U",
-                "A18U",
-                "A19U",
-            }
+            # Cada grupo A acepta su variante urbana o rural.
+            # Solo se considera faltante cuando no aparece
+            # ninguna de las dos alternativas del grupo.
+            requisitos = [
+                ("CALE1F", {"CALE1F"}),
+                ("A12U/A12R", {"A12U", "A12R"}),
+                ("A18U/A18R", {"A18U", "A18R"}),
+                ("A19U/A19R", {"A19U", "A19R"}),
+            ]
 
-            faltantes = sorted(
-                obligatorios - items_res
-            )
+            faltantes = []
+            encontrados = []
 
-            encontrados = sorted(
-                items_res & obligatorios
-            )
+            for etiqueta, alternativas in requisitos:
+
+                presentes = sorted(
+                    items_res & alternativas
+                )
+
+                if presentes:
+                    encontrados.extend(
+                        presentes
+                    )
+                else:
+                    faltantes.append(
+                        etiqueta
+                    )
 
             if faltantes:
 
@@ -1741,6 +1754,175 @@ df_alerta_actividades = (
 print(
     "🚨 Alertas por actividad encontradas: "
     f"{len(df_alerta_actividades)}"
+)
+
+# ============================================================
+# HOJA NUEVA: LEGALIZACION_NO_COBRO
+#
+# RESPONSABILIDAD EXCLUSIVA:
+# Identificar cobros al cliente que no están permitidos para
+# determinados suministros de actividades de legalización.
+#
+# Regla:
+# - actividad = ACAMN, ALECA, ALEGA o ALEGN
+# - tipo = SUM
+# - item_res = 215887A o 219404A
+# - vlr_cliente diferente de 0 -> ALERTA
+#
+# Esta alerta es independiente de las demás validaciones.
+# ============================================================
+
+def validar_legalizacion_no_cobro(df_export_in):
+
+    columnas_salida = [
+        "pedido",
+        "subzona",
+        "actividad",
+        "item_res",
+        "cantidad",
+        "vlr_cliente",
+        "tipo_alerta",
+        "detalle",
+    ]
+
+    columnas_requeridas = {
+        "pedido",
+        "subz",
+        "actividad",
+        "tipo",
+        "item_res",
+        "cantidad",
+        "vlr_cliente",
+    }
+
+    columnas_faltantes = (
+        columnas_requeridas
+        - set(df_export_in.columns)
+    )
+
+    if columnas_faltantes:
+        print(
+            "⚠️ No se pudo ejecutar LEGALIZACION_NO_COBRO. "
+            f"Faltan columnas: {sorted(columnas_faltantes)}"
+        )
+
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df = df_export_in.copy()
+
+    for columna in [
+        "pedido",
+        "subz",
+        "actividad",
+        "tipo",
+        "item_res",
+    ]:
+        df[columna] = (
+            df[columna]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    def convertir_valor_cliente(valor):
+        if pd.isna(valor):
+            return 0.0
+
+        texto = (
+            str(valor)
+            .strip()
+            .replace("$", "")
+            .replace(" ", "")
+        )
+
+        if texto.upper() in {"", "NAN", "NONE"}:
+            return 0.0
+
+        if "," in texto and "." in texto:
+            if texto.rfind(",") > texto.rfind("."):
+                texto = texto.replace(".", "").replace(",", ".")
+            else:
+                texto = texto.replace(",", "")
+        elif "," in texto:
+            texto = texto.replace(",", ".")
+
+        try:
+            return float(texto)
+        except ValueError:
+            return 0.0
+
+    df["VLR_CLIENTE_NUM"] = df["vlr_cliente"].apply(
+        convertir_valor_cliente
+    )
+
+    actividades_controladas = {
+        "ACAMN",
+        "ALECA",
+        "ALEGA",
+        "ALEGN",
+    }
+
+    suministros_sin_cobro = {
+        "215887A",
+        "219404A",
+    }
+
+    df_alerta = df[
+        df["actividad"].isin(actividades_controladas)
+        & df["tipo"].eq("SUM")
+        & df["item_res"].isin(suministros_sin_cobro)
+        & df["VLR_CLIENTE_NUM"].ne(0)
+    ].copy()
+
+    if df_alerta.empty:
+        return pd.DataFrame(
+            columns=columnas_salida
+        )
+
+    df_alerta["vlr_cliente"] = df_alerta["VLR_CLIENTE_NUM"]
+    df_alerta["tipo_alerta"] = "COBRO_NO_PERMITIDO"
+
+    df_alerta["detalle"] = df_alerta.apply(
+        lambda r: (
+            f"El suministro {r['item_res']} de la actividad "
+            f"{r['actividad']} no debe llevar cobro al cliente. "
+            f"Se encontró vlr_cliente={r['VLR_CLIENTE_NUM']:g}."
+        ),
+        axis=1
+    )
+
+    df_alerta = (
+        df_alerta
+        .rename(columns={"subz": "subzona"})
+        .sort_values(
+            by=[
+                "subzona",
+                "pedido",
+                "actividad",
+                "item_res",
+            ],
+            kind="stable"
+        )
+        .reset_index(drop=True)
+    )
+
+    return df_alerta[
+        columnas_salida
+    ]
+
+
+df_legalizacion_no_cobro = (
+    validar_legalizacion_no_cobro(
+        df_export
+    )
+)
+
+print(
+    "🚨 Alertas de legalización con cobro encontradas: "
+    f"{len(df_legalizacion_no_cobro)}"
 )
 
 # ============================================================
@@ -2210,6 +2392,12 @@ with pd.ExcelWriter(
         index=False
         )
 
+    df_legalizacion_no_cobro.to_excel(
+        writer,
+        sheet_name="LEGALIZACION_NO_COBRO",
+        index=False
+    )
+
     df_alerta_cantidades_mo.to_excel(
         writer,
         sheet_name="ALERTA_CANTIDADES_MO",
@@ -2242,6 +2430,11 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
     wb[
         "ALERTA_ACTIVIDADES"
     ].sheet_properties.tabColor = "0070C0"
+
+if "LEGALIZACION_NO_COBRO" in wb.sheetnames:
+    wb[
+        "LEGALIZACION_NO_COBRO"
+    ].sheet_properties.tabColor = "595959"
 
 if "ALERTA_CANTIDADES_MO" in wb.sheetnames:
     wb[
@@ -2729,6 +2922,111 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
         )
 
     for fila in ws_act.iter_rows(
+        min_row=2
+    ):
+        for celda in fila:
+            celda.alignment = Alignment(
+                vertical="center",
+                wrap_text=True
+            )
+
+
+# ============================================================
+# FORMATO HOJA LEGALIZACION_NO_COBRO
+# ============================================================
+
+if "LEGALIZACION_NO_COBRO" in wb.sheetnames:
+
+    ws_cobro = wb["LEGALIZACION_NO_COBRO"]
+
+    ws_cobro.freeze_panes = "A2"
+    ws_cobro.auto_filter.ref = ws_cobro.dimensions
+
+    fill_gris_oscuro = PatternFill(
+        "solid",
+        fgColor="595959"
+    )
+
+    font_blanco = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    fill_gris_claro = PatternFill(
+        "solid",
+        fgColor="E7E6E6"
+    )
+
+    align_center = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for cell in ws_cobro[1]:
+        cell.fill = fill_gris_oscuro
+        cell.font = font_blanco
+        cell.alignment = align_center
+
+    for fila in ws_cobro.iter_rows(
+        min_row=2,
+        max_row=ws_cobro.max_row,
+        min_col=1,
+        max_col=ws_cobro.max_column
+    ):
+        for celda in fila:
+            celda.fill = fill_gris_claro
+
+    encabezados_cobro = {
+        cell.value: idx + 1
+        for idx, cell in enumerate(ws_cobro[1])
+    }
+
+    col_vlr_cliente = encabezados_cobro.get(
+        "vlr_cliente"
+    )
+
+    if col_vlr_cliente:
+
+        fill_rojo = PatternFill(
+            "solid",
+            fgColor="C00000"
+        )
+
+        for fila in range(
+            2,
+            ws_cobro.max_row + 1
+        ):
+            celda = ws_cobro.cell(
+                row=fila,
+                column=col_vlr_cliente
+            )
+
+            celda.fill = fill_rojo
+            celda.font = font_blanco
+            celda.number_format = '#,##0.00'
+
+    for columna in ws_cobro.columns:
+
+        max_length = 0
+        letra = get_column_letter(
+            columna[0].column
+        )
+
+        for cell in columna:
+            if cell.value is not None:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+
+        ws_cobro.column_dimensions[
+            letra
+        ].width = min(
+            max_length + 5,
+            75
+        )
+
+    for fila in ws_cobro.iter_rows(
         min_row=2
     ):
         for celda in fila:
