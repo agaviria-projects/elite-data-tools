@@ -23,6 +23,7 @@ class InformeAnsController:
         solo_primer_correo: bool,
         abrir_outlook: bool,
         enviar_automaticamente: bool,
+        zona: str,
         informar: Callable[[str], None],
     ) -> ResultadoEjecucion:
         """
@@ -35,6 +36,7 @@ class InformeAnsController:
             solo_primer_correo=solo_primer_correo,
             abrir_outlook=abrir_outlook,
             enviar_automaticamente=enviar_automaticamente,
+            zona=zona,
         )
 
         resultado = ejecutar_informe_ans(

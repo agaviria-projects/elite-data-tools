@@ -47,11 +47,13 @@ def generar_html(
     """
     Genera el HTML principal del correo.
 
-    En esta primera versión únicamente reemplaza
-    la información general del informe.
+    Genera el correo completo reutilizando la misma plantilla.
 
-    Las actividades y tablas se incorporarán
-    en las siguientes versiones.
+    Para METROPOLITANA conserva la separación actual por
+    producto y actividad.
+
+    Para SUROESTE y OCCIDENTE genera un único resumen y un
+    único detalle con todos los pedidos de la zona.
     """
 
     html = leer_plantilla()
@@ -66,9 +68,14 @@ def generar_html(
         correo["subzona"],
     )
 
+    fecha_corte = correo.get(
+        "fecha_corte",
+        "",
+    )
+
     html = html.replace(
         "{{FECHA}}",
-        correo["fecha_corte"],
+        fecha_corte,
     )
 
     html = html.replace(
@@ -83,13 +90,25 @@ def generar_html(
         resumen,
     )
 
-    # En la primera versión aún no existen actividades
+    # ======================================================
+    # CONTENIDO SEGÚN TIPO DE CORREO
+    # ======================================================
 
-    actividades = generar_actividades(correo)
+    if correo.get("tipo_correo") == "ZONA":
+
+        contenido = generar_contenido_zona(
+            correo
+        )
+
+    else:
+
+        contenido = generar_actividades(
+            correo
+        )
 
     html = html.replace(
         "{{ACTIVIDADES}}",
-        actividades,
+        contenido,
     )
     footer = generar_footer(correo)
 
@@ -560,6 +579,138 @@ def generar_resumen_ejecutivo(correo):
     </table>
     """
 
+
+
+# ==========================================================
+# GENERAR CONTENIDO PARA CORREOS POR ZONA
+# ==========================================================
+
+def generar_contenido_zona(
+    correo: dict,
+) -> str:
+    """
+    Genera un único bloque para SUROESTE u OCCIDENTE.
+
+    A diferencia de METROPOLITANA:
+    - No separa por producto.
+    - No separa por actividad.
+    - Presenta un único resumen por estado.
+    - Presenta un único detalle con todos los pedidos de la zona.
+
+    El diseño visual reutiliza los mismos componentes del
+    correo metropolitano para mantener uniformidad.
+    """
+
+    bloques = correo.get(
+        "bloques",
+        [],
+    )
+
+    if not bloques:
+
+        return ""
+
+    bloque = bloques[0]
+
+    actividades = bloque.get(
+        "actividades",
+        [],
+    )
+
+    if not actividades:
+
+        return ""
+
+    actividad = actividades[0]
+
+    resumen_html = generar_resumen(
+        actividad["resumen"]
+    )
+
+    tabla_html = generar_tabla(
+        actividad["tabla"],
+        correo["grupo"],
+    )
+
+    total_pedidos = correo.get(
+        "total_pedidos",
+        actividad.get(
+            "total",
+            0,
+        ),
+    )
+
+    zona = correo.get(
+        "zona",
+        correo.get(
+            "subzona",
+            correo.get(
+                "grupo",
+                "",
+            ),
+        ),
+    )
+
+    return f"""
+    <div
+        style="
+            margin-bottom:35px;
+        "
+    >
+
+        <h2
+            style="
+                color:#0f766e;
+                margin:0 0 8px 0;
+                font-size:18px;
+            "
+        >
+            📍 Zona: {zona}
+        </h2>
+
+        <p
+            style="
+                margin:4px 0 12px 0;
+            "
+        >
+            <b>Total pedidos:</b>
+            {total_pedidos}
+        </p>
+
+        <h3
+            style="
+                color:#1565c0;
+                margin:12px 0 8px 0;
+                font-size:16px;
+            "
+        >
+            📊 Resumen general
+        </h3>
+
+        {resumen_html}
+
+        <hr
+            style="
+                border:none;
+                border-top:1px solid #d1d5db;
+                margin:18px 0;
+            "
+        >
+
+        <h3
+            style="
+                color:#0f766e;
+                margin:0 0 12px 0;
+                font-size:16px;
+            "
+        >
+            📋 Detalle de pedidos
+        </h3>
+
+        {tabla_html}
+
+    </div>
+    """
 
 
 # ==========================================================

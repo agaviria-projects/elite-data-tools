@@ -26,7 +26,7 @@ DESTINATARIOS_PRUEBA = [
 ]
 
 COPIA_PRUEBA = [
-    
+
 ]
 
 
@@ -35,6 +35,10 @@ COPIA_PRUEBA = [
 # ==========================================================
 
 DESTINATARIOS = {
+
+    # ------------------------------------------------------
+    # METROPOLITANA
+    # ------------------------------------------------------
 
     "PUNTOS DE CONEXIÓN": [
         "c.oliveros@eliteingenieros.com.co",
@@ -61,6 +65,22 @@ DESTINATARIOS = {
         "l.toro@eliteingenieros.com.co",
     ],
 
+    # ------------------------------------------------------
+    # SUROESTE
+    # ------------------------------------------------------
+
+    "SUROESTE": [
+        "d.sanchez@eliteingenieros.com.co",
+    ],
+
+    # ------------------------------------------------------
+    # OCCIDENTE
+    # ------------------------------------------------------
+
+    "OCCIDENTE": [
+        "d.sanchez@eliteingenieros.com.co",
+    ],
+
 }
 
 
@@ -69,6 +89,10 @@ DESTINATARIOS = {
 # ==========================================================
 
 COPIAS = {
+
+    # ------------------------------------------------------
+    # METROPOLITANA
+    # ------------------------------------------------------
 
     "PUNTOS DE CONEXIÓN": [
         "j.barbosa@eliteingenieros.com.co",
@@ -92,6 +116,25 @@ COPIAS = {
         "c.oliveros@eliteingenieros.com.co",
         "j.barbosa@eliteingenieros.com.co",
         "d.leon@eliteingenieros.com.co",
+    ],
+
+    # ------------------------------------------------------
+    # SUROESTE
+    # ------------------------------------------------------
+
+    "SUROESTE": [
+        "j.amazara@eliteingenieros.com.co",
+        "dana.villa@eliteingenieros.com.co",
+        "j.barbosa@eliteingenieros.com.co",
+    ],
+
+    # ------------------------------------------------------
+    # OCCIDENTE
+    # ------------------------------------------------------
+
+    "OCCIDENTE": [
+        "j.giraldo@eliteingenieros.com.co",
+        "dana.villa@eliteingenieros.com.co",
     ],
 
 }

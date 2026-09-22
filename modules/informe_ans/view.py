@@ -252,6 +252,36 @@ def crear_seguimiento_ans(panel) -> None:
         side="left",
     )
 
+    ttk.Label(
+        fila_superior,
+        text="Zona:",
+    ).pack(
+        side="left",
+        padx=(20, 10),
+    )
+
+    zona_seleccionada = ttk.StringVar(
+        value="METROPOLITANA"
+    )
+
+    vista.zona_seleccionada = zona_seleccionada
+
+    cmb_zona = ttk.Combobox(
+        fila_superior,
+        textvariable=zona_seleccionada,
+        values=[
+            "METROPOLITANA",
+            "SUROESTE",
+            "OCCIDENTE",
+            "TODAS",
+        ],
+        state="readonly",
+        width=18,
+    )
+
+    cmb_zona.pack(
+        side="left",
+    )
     boton_generar = ttk.Button(
         fila_superior,
         text="▶ Generar correos",
@@ -447,6 +477,7 @@ def crear_seguimiento_ans(panel) -> None:
     def ejecutar_proceso(
         enviar_automaticamente: bool,
         procesar_solo_primero: bool,
+        zona: str,
     ) -> None:
         """
         Ejecuta el controlador sin bloquear DataSuite.
@@ -464,6 +495,7 @@ def crear_seguimiento_ans(panel) -> None:
                 solo_primer_correo=procesar_solo_primero,
                 abrir_outlook=True,
                 enviar_automaticamente=enviar_automaticamente,
+                zona=zona,
                 informar=escribir_consola,
             )
 
@@ -503,17 +535,36 @@ def crear_seguimiento_ans(panel) -> None:
             modo_ejecucion.get()
         )
 
+        zona_actual = (
+            zona_seleccionada.get()
+        )
         enviar_automaticamente = (
             modo_seleccionado
             == "Envío automático"
         )
 
         if enviar_automaticamente:
-            cantidad = (
-                "1 correo"
-                if solo_primer_correo.get()
-                else "4 correos"
-            )
+
+            if solo_primer_correo.get():
+                cantidad = "1 correo"
+            else:
+                cantidad_por_zona = {
+                    "METROPOLITANA": 4,
+                    "SUROESTE": 1,
+                    "OCCIDENTE": 1,
+                    "TODAS": 6,
+                }
+
+                total_correos = cantidad_por_zona.get(
+                    zona_actual,
+                    1,
+                )
+
+                cantidad = (
+                    "1 correo"
+                    if total_correos == 1
+                    else f"{total_correos} correos"
+                )
 
             destino = (
                 "destinatarios de prueba"
@@ -554,11 +605,24 @@ def crear_seguimiento_ans(panel) -> None:
         )
 
         escribir_consola(
+            f"📍 Zona seleccionada: "
+            f"{zona_actual}"
+        )
+
+        escribir_consola(
             "📨 Correos a procesar: "
             + (
                 "solo el primero"
                 if solo_primer_correo.get()
-                else "todos los grupos"
+                else (
+                    "4 correos metropolitanos"
+                    if zona_actual == "METROPOLITANA"
+                    else "1 correo de SUROESTE"
+                    if zona_actual == "SUROESTE"
+                    else "1 correo de OCCIDENTE"
+                    if zona_actual == "OCCIDENTE"
+                    else "todos los correos (6)"
+                )
             )
         )
 
@@ -577,6 +641,7 @@ def crear_seguimiento_ans(panel) -> None:
             args=(
                 enviar_automaticamente,
                 procesar_solo_primero,
+                zona_actual,
             ),
             daemon=True,
         )

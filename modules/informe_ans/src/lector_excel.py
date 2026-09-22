@@ -1,10 +1,7 @@
 import pandas as pd
 
 from ..config.columnas import COLUMNAS_REQUERIDAS
-from ..config.parametros import (
-    ARCHIVO_FENIX,
-    SUBZONA_PROCESAR,
-)
+from ..config.parametros import ARCHIVO_FENIX
 
 
 # ==========================================================
@@ -13,9 +10,13 @@ from ..config.parametros import (
 
 def leer_excel() -> pd.DataFrame:
     """
-    Lee el archivo FENIX_ANS.xlsx ubicado en la carpeta
-    entrada y retorna únicamente los registros de la
-    subzona configurada y las columnas requeridas.
+    Lee FENIX_ANS.xlsx y retorna la información necesaria
+    para Seguimiento ANS.
+
+    No filtra la subzona.
+
+    La selección de METROPOLITANA, SUROESTE, OCCIDENTE
+    o TODAS se realiza posteriormente desde runner.py.
     """
 
     df = pd.read_excel(
@@ -24,15 +25,25 @@ def leer_excel() -> pd.DataFrame:
     )
 
     # ------------------------------------------------------
-    # FILTRAR SUBZONA
+    # VALIDAR SUBZONA
     # ------------------------------------------------------
 
-    df = df[
-        df["SUBZONA"].astype(str).str.strip().eq(SUBZONA_PROCESAR)
+    if "SUBZONA" not in df.columns:
+        raise ValueError(
+            "El archivo FENIX no contiene la columna SUBZONA."
+        )
+
+    # ------------------------------------------------------
+    # CONSERVAR COLUMNAS REQUERIDAS + SUBZONA
+    # ------------------------------------------------------
+
+    columnas_salida = list(
+        dict.fromkeys(
+            COLUMNAS_REQUERIDAS
+            + ["SUBZONA"]
+        )
+    )
+
+    return df[
+        columnas_salida
     ].copy()
-
-    # ------------------------------------------------------
-    # RETORNAR COLUMNAS REQUERIDAS
-    # ------------------------------------------------------
-
-    return df[COLUMNAS_REQUERIDAS].copy()
