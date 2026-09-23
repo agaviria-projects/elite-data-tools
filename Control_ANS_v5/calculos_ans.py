@@ -181,6 +181,8 @@ df["FECHA_INICIO_ANS"] = pd.to_datetime(df["FECHA_INICIO_ANS"], errors="coerce",
 # ------------------------------------------------------------
 # DÍAS PACTADOS
 # ------------------------------------------------------------
+# Regla contractual METROPOLITANA SUR.
+# Se conserva sin cambios respecto a la versión actual.
 DIAS_PACTADOS_MAP = {
     "ACREV":  {"URBANO": 4,  "RURAL": 4},
     "ALEGN":  {"URBANO": 7,  "RURAL": 10},
@@ -190,18 +192,46 @@ DIAS_PACTADOS_MAP = {
     "AMRTR":  {"URBANO": 9,  "RURAL": 14},
     "REEQU":  {"URBANO": 11, "RURAL": 11},
     "INPRE":  {"URBANO": 11, "RURAL": 11},
-    "DIPRE":  {"URBANO": 8, "RURAL": 11},
+    "DIPRE":  {"URBANO": 8,  "RURAL": 11},
     "ARTER":  {"URBANO": 5,  "RURAL": 8},
     "AEJDO":  {"URBANO": 7,  "RURAL": 12},
-    "VITEC":  {"URBANO": 2, "RURAL": 2},
-    "APLIN":  {"URBANO": 8, "RURAL":8},
+    "VITEC":  {"URBANO": 2,  "RURAL": 2},
+    "APLIN":  {"URBANO": 8,  "RURAL": 8},
+}
+
+# Regla contractual SUROESTE + OCCIDENTE.
+# Ambas zonas comparten los mismos días pactados.
+DIAS_PACTADOS_SO_OCC = {
+    "ACREV":  {"URBANO": 4,  "RURAL": 4},
+    "ALEGN":  {"URBANO": 7,  "RURAL": 10},
+    "ALEGA":  {"URBANO": 7,  "RURAL": 10},
+    "ALECA":  {"URBANO": 7,  "RURAL": 10},
+    "ACAMN":  {"URBANO": 6,  "RURAL": 9},
+    "AMRTR":  {"URBANO": 9,  "RURAL": 14},
+    "REEQU":  {"URBANO": 11, "RURAL": 11},
+    "INPRE":  {"URBANO": 13, "RURAL": 13},
+    "DIPRE":  {"URBANO": 11, "RURAL": 11},
+    "ARTER":  {"URBANO": 5,  "RURAL": 9},
+    "AEJDO":  {"URBANO": 8,  "RURAL": 13},
+    "VITEC":  {"URBANO": 2,  "RURAL": 2},
+    "APLIN":  {"URBANO": 8,  "RURAL": 8},
 }
 
 def dias_pactados(row):
     act = str(row.get("ACTIVIDAD", "")).strip().upper()
     tipo = str(row.get("TIPO_DIRECCION", "")).strip().upper()
-    if act in DIAS_PACTADOS_MAP and tipo in DIAS_PACTADOS_MAP[act]:
-        return DIAS_PACTADOS_MAP[act][tipo]
+    subzona = str(row.get("SUBZONA", "")).strip().upper()
+
+    # SUROESTE y OCCIDENTE utilizan su tabla contractual específica.
+    # Las demás zonas conservan la tabla base vigente.
+    if subzona in ["SUROESTE", "OCCIDENTE"]:
+        mapa = DIAS_PACTADOS_SO_OCC
+    else:
+        mapa = DIAS_PACTADOS_MAP
+
+    if act in mapa and tipo in mapa[act]:
+        return mapa[act][tipo]
+
     return 0
 
 df["DIAS_PACTADOS"] = df.apply(dias_pactados, axis=1)
@@ -912,23 +942,37 @@ if "CONFIG_DIAS_PACTADOS" in wb.sheetnames:
     del wb["CONFIG_DIAS_PACTADOS"]
 
 ws_conf = wb.create_sheet("CONFIG_DIAS_PACTADOS")
-ws_conf.append(["Actividad", "Descripción", "Días Urbanos", "Días Rurales"])
+ws_conf.append(["Grupo Zona", "Actividad", "Descripción", "Días Urbanos", "Días Rurales"])
 
+# Trazabilidad de las reglas contractuales utilizadas en el cálculo ANS.
 datos = [
-    ["ACREV","PUNTOS CONEXIÓN",4,4],
-    ["ALEGN","LEGALIZACIÓN",7,10],
-    ["ALEGA","LEGALIZACIÓN",7,10],
-    ["ALECA","LEGALIZACIÓN",7,10],
-    ["ACAMN","REFORMA",7,10],
-    ["AMRTR","MOVIMIENTO RED",9,14],
-    ["REEQU","PREPAGO",11,11],
-    ["INPRE","INSTALACIÓN",11,11],
-    ["DIPRE","DESINSTALAR",8,11],
-    ["ARTER","REPLANTEO",5,8],
-    ["AEJDO","EJECUCIÓN",7,12],
-    ["VITEC","VITEC",2,2],
-    ["APLIN","APLIN",8,8],
-    
+    ["METROPOLITANA SUR / BASE", "ACREV", "PUNTOS CONEXIÓN", 4, 4],
+    ["METROPOLITANA SUR / BASE", "ALEGN", "LEGALIZACIÓN", 7, 10],
+    ["METROPOLITANA SUR / BASE", "ALEGA", "LEGALIZACIÓN", 7, 10],
+    ["METROPOLITANA SUR / BASE", "ALECA", "LEGALIZACIÓN", 7, 10],
+    ["METROPOLITANA SUR / BASE", "ACAMN", "REFORMA", 7, 10],
+    ["METROPOLITANA SUR / BASE", "AMRTR", "MOVIMIENTO RED", 9, 14],
+    ["METROPOLITANA SUR / BASE", "REEQU", "PREPAGO", 11, 11],
+    ["METROPOLITANA SUR / BASE", "INPRE", "INSTALACIÓN", 11, 11],
+    ["METROPOLITANA SUR / BASE", "DIPRE", "DESINSTALAR", 8, 11],
+    ["METROPOLITANA SUR / BASE", "ARTER", "REPLANTEO", 5, 8],
+    ["METROPOLITANA SUR / BASE", "AEJDO", "EJECUCIÓN", 7, 12],
+    ["METROPOLITANA SUR / BASE", "VITEC", "VITEC", 2, 2],
+    ["METROPOLITANA SUR / BASE", "APLIN", "APLIN", 8, 8],
+
+    ["SUROESTE / OCCIDENTE", "ACREV", "PUNTOS CONEXIÓN", 4, 4],
+    ["SUROESTE / OCCIDENTE", "ALEGN", "LEGALIZACIÓN", 7, 10],
+    ["SUROESTE / OCCIDENTE", "ALEGA", "LEGALIZACIÓN", 7, 10],
+    ["SUROESTE / OCCIDENTE", "ALECA", "LEGALIZACIÓN", 7, 10],
+    ["SUROESTE / OCCIDENTE", "ACAMN", "REFORMA", 6, 9],
+    ["SUROESTE / OCCIDENTE", "AMRTR", "MOVIMIENTO RED", 9, 14],
+    ["SUROESTE / OCCIDENTE", "REEQU", "PREPAGO", 11, 11],
+    ["SUROESTE / OCCIDENTE", "INPRE", "INSTALACIÓN", 13, 13],
+    ["SUROESTE / OCCIDENTE", "DIPRE", "DESINSTALAR", 11, 11],
+    ["SUROESTE / OCCIDENTE", "ARTER", "REPLANTEO", 5, 9],
+    ["SUROESTE / OCCIDENTE", "AEJDO", "EJECUCIÓN", 8, 13],
+    ["SUROESTE / OCCIDENTE", "VITEC", "VITEC", 2, 2],
+    ["SUROESTE / OCCIDENTE", "APLIN", "APLIN", 8, 8],
 ]
 
 for f in datos:

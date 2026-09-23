@@ -71,6 +71,7 @@ DESTINATARIOS = {
 
     "SUROESTE": [
         "d.sanchez@eliteingenieros.com.co",
+        "diego.durango@eliteingenieros.com.co",
     ],
 
     # ------------------------------------------------------
@@ -79,6 +80,7 @@ DESTINATARIOS = {
 
     "OCCIDENTE": [
         "d.sanchez@eliteingenieros.com.co",
+        "diego.durango@eliteingenieros.com.co",
     ],
 
 }
@@ -135,6 +137,7 @@ COPIAS = {
     "OCCIDENTE": [
         "j.giraldo@eliteingenieros.com.co",
         "dana.villa@eliteingenieros.com.co",
+        "j.barbosa@eliteingenieros.com.co",
     ],
 
 }
