@@ -365,6 +365,177 @@ def limpiar_pedido(x):
     return x
 
 
+# ============================================================
+# 🚫 EXCLUSIÓN AUTOMÁTICA - CONTROL PÉRDIDAS EPM
+# ============================================================
+# Regla de negocio:
+# Si al menos una fila de un PEDIDO cumple simultáneamente:
+#   - EQUIPO = REVPERD
+#   - PRODUCTO_ID = ENEPRE, ENENOR o ENERES
+#
+# se excluye TODO el PEDIDO del informe ANS, incluyendo cualquier
+# fila duplicada o adicional asociada al mismo número de pedido.
+#
+# La detección de columnas se hace sin depender de mayúsculas/minúsculas
+# ni espacios en los encabezados del archivo FENIX_CLEAN.xlsx.
+# ============================================================
+
+# Normalizar PEDIDO antes de identificar pedidos a excluir.
+df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
+
+# Localizar columnas reales de forma robusta.
+columnas_normalizadas = {
+    str(col).strip().upper(): col
+    for col in df.columns
+}
+
+col_equipo = columnas_normalizadas.get("EQUIPO")
+col_producto = columnas_normalizadas.get("PRODUCTO_ID")
+
+if col_equipo is not None and col_producto is not None:
+
+    equipo_norm = (
+        df[col_equipo]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    producto_norm = (
+        df[col_producto]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    mask_control_perdidas = (
+        (equipo_norm == "REVPERD")
+        &
+        producto_norm.isin(["ENEPRE", "ENENOR", "ENERES"])
+    )
+
+    # Identificar PEDIDOS completos que cumplen la regla.
+    pedidos_control_perdidas = set(
+        df.loc[
+            mask_control_perdidas,
+            "PEDIDO"
+        ]
+        .dropna()
+        .astype(str)
+    )
+
+    # Evitar valores vacíos dentro del conjunto.
+    pedidos_control_perdidas.discard("")
+
+    registros_antes = len(df)
+    cantidad_pedidos = len(pedidos_control_perdidas)
+
+    # Eliminar TODAS las filas pertenecientes a esos pedidos.
+    df = df[
+        ~df["PEDIDO"].isin(pedidos_control_perdidas)
+    ].copy()
+
+    registros_eliminados = registros_antes - len(df)
+
+    print(
+        f"🚫 CONTROL PÉRDIDAS EPM aplicado: "
+        f"{cantidad_pedidos} pedido(s) excluido(s) | "
+        f"{registros_eliminados} registro(s) eliminado(s)."
+    )
+
+else:
+    faltantes_control_perdidas = []
+
+    if col_equipo is None:
+        faltantes_control_perdidas.append("EQUIPO")
+
+    if col_producto is None:
+        faltantes_control_perdidas.append("PRODUCTO_ID")
+
+    print(
+        "⚠️ No se aplicó la exclusión automática CONTROL PÉRDIDAS EPM. "
+        f"Columnas faltantes: {faltantes_control_perdidas}"
+    )
+
+
+# ============================================================
+# 🚫 CONTROL DE EXCLUSIONES DEL INFORME ANS
+# ============================================================
+# Regla de negocio:
+# Si un PEDIDO presente en la extracción también existe en
+# data_master/CONTROL_EXCLUSIONES.xlsx, se elimina del dataframe
+# y no se incluye en el archivo final FENIX_ANS.xlsx.
+#
+# El archivo de control debe contener, como mínimo, la columna:
+#   PEDIDO
+#
+# Se recomienda conservar adicionalmente una columna MOTIVO para
+# trazabilidad, aunque no es obligatoria para aplicar el filtro.
+# ============================================================
+
+ruta_exclusiones = base_path / "data_master" / "CONTROL_EXCLUSIONES.xlsx"
+
+if ruta_exclusiones.exists():
+    try:
+        df_exclusiones = pd.read_excel(ruta_exclusiones, dtype=str)
+
+        # Normalizar encabezados del archivo de control
+        df_exclusiones.columns = (
+            df_exclusiones.columns
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        if "PEDIDO" not in df_exclusiones.columns:
+            print(
+                "⚠️ CONTROL_EXCLUSIONES.xlsx no contiene la columna PEDIDO. "
+                "No se aplicaron exclusiones."
+            )
+        else:
+            # Normalizar PEDIDO en ambas fuentes con la misma regla
+            df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
+            df_exclusiones["PEDIDO"] = (
+                df_exclusiones["PEDIDO"]
+                .apply(limpiar_pedido)
+            )
+
+            # Ignorar registros vacíos del archivo de control
+            pedidos_excluir = set(
+                df_exclusiones.loc[
+                    df_exclusiones["PEDIDO"] != "",
+                    "PEDIDO"
+                ]
+            )
+
+            cantidad_antes = len(df)
+
+            # Eliminar todas las filas cuyo PEDIDO esté en el control
+            df = df[
+                ~df["PEDIDO"].isin(pedidos_excluir)
+            ].copy()
+
+            total_excluidos = cantidad_antes - len(df)
+
+            print(
+                f"🚫 CONTROL_EXCLUSIONES aplicado: "
+                f"{total_excluidos} registro(s) excluido(s) de FENIX_ANS."
+            )
+
+    except Exception as e:
+        print(
+            f"⚠️ No fue posible aplicar CONTROL_EXCLUSIONES.xlsx: {e}. "
+            "El proceso continuará sin exclusiones."
+        )
+else:
+    print(
+        "ℹ️ No existe data_master/CONTROL_EXCLUSIONES.xlsx. "
+        "El proceso continuará sin exclusiones."
+    )
+
+
 try:
     cred_path = base_path / "control-ans-elite-f4ea102db569.json"  # <--- CORRECTO
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -770,10 +941,18 @@ if "MARCA_TEMPORAL" in cols and "REPORTE_TECNICO" in cols:
     cols.insert(idx, "MARCA_TEMPORAL")
     df = df[cols]
 
-# # ------------------------------------------------------------
-# # 🧹 Quitar columna ESTADO_FENIX del archivo final
-# # ------------------------------------------------------------
-df = df.drop(columns=["ESTADO_FENIX"], errors="ignore")
+# ------------------------------------------------------------
+# 🧹 QUITAR COLUMNAS DE USO INTERNO DEL ARCHIVO FINAL
+# ------------------------------------------------------------
+# EQUIPO se conserva en FENIX_CLEAN para aplicar reglas de negocio,
+# pero no se exporta a FENIX_ANS para mantener su estructura histórica.
+df = df.drop(
+    columns=[
+        "ESTADO_FENIX",
+        "EQUIPO",
+    ],
+    errors="ignore"
+)
 
 ruta_output.parent.mkdir(exist_ok=True)
 with pd.ExcelWriter(ruta_output, engine="openpyxl") as writer:
