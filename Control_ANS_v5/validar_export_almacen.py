@@ -843,6 +843,88 @@ def _alertas_cantidad_d(df_export_in):
     ]
 
 
+def _alertas_cantidad_f(df_export_in):
+    """
+    Detecta cantidad > 1 únicamente para las MO F01U y F01R.
+    """
+    items_f_controlados = {"F01U", "F01R"}
+
+    df_con = df_export_in[
+        df_export_in["tipo"] == "CON"
+    ].copy()
+
+    df_con["MO_BASE"] = (
+        df_con["item_cont"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    if "cantidad" in df_con.columns:
+        df_con["CANT_NUM"] = pd.to_numeric(
+            df_con["cantidad"]
+            .fillna("")
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.strip(),
+            errors="coerce"
+        ).fillna(0)
+    else:
+        df_con["CANT_NUM"] = 0
+
+    df_alert = df_con[
+        df_con["pedido"].notna()
+        & df_con["subz"].notna()
+        & df_con["MO_BASE"].isin(items_f_controlados)
+        & (df_con["CANT_NUM"] > 1)
+    ][
+        ["pedido", "subz", "MO_BASE", "CANT_NUM"]
+    ].copy()
+
+    if df_alert.empty:
+        return pd.DataFrame(
+            columns=[
+                "pedido",
+                "subzona",
+                "mano_obra",
+                "ALERTA_CANTIDAD_F",
+                "DETALLE_CANTIDAD_F",
+            ]
+        )
+
+    df_alert["DET"] = df_alert.apply(
+        lambda r: f"{r['MO_BASE']}={r['CANT_NUM']:g}",
+        axis=1
+    )
+
+    out = (
+        df_alert
+        .groupby(["pedido", "subz", "MO_BASE"])["DET"]
+        .apply(lambda x: ", ".join(sorted(set(x))))
+        .reset_index()
+        .rename(
+            columns={
+                "subz": "subzona",
+                "MO_BASE": "mano_obra",
+            }
+        )
+    )
+
+    out["ALERTA_CANTIDAD_F"] = "CANTIDAD_F>1"
+    out["DETALLE_CANTIDAD_F"] = out["DET"]
+
+    return out[
+        [
+            "pedido",
+            "subzona",
+            "mano_obra",
+            "ALERTA_CANTIDAD_F",
+            "DETALLE_CANTIDAD_F",
+        ]
+    ]
+
+
 # --- 1) Ejecutar alerta de duplicados para cualquier MO tipo CON
 df_dup_mo = _alerta_duplicados_mo(
     df_export
@@ -916,7 +998,38 @@ df_resultado.loc[mask_alert_d, "faltantes"] = ""
 df_resultado.loc[mask_alert_d, "sobrantes"] = ""
 
 
-# --- 4) Si hay alerta Axx cantidad>1: estado = novedad cantidades (sin borrar estado_codigo)
+# --- 4) Ejecutar alerta cantidad>1 para F01U/F01R
+df_alertas_f = _alertas_cantidad_f(df_export)
+
+if not df_alertas_f.empty:
+    df_resultado = df_resultado.merge(
+        df_alertas_f,
+        on=["pedido", "subzona", "mano_obra"],
+        how="left"
+    )
+else:
+    df_resultado["ALERTA_CANTIDAD_F"] = ""
+    df_resultado["DETALLE_CANTIDAD_F"] = ""
+
+df_resultado["ALERTA_CANTIDAD_F"] = (
+    df_resultado["ALERTA_CANTIDAD_F"].fillna("")
+)
+df_resultado["DETALLE_CANTIDAD_F"] = (
+    df_resultado["DETALLE_CANTIDAD_F"].fillna("")
+)
+
+mask_alert_f = df_resultado["ALERTA_CANTIDAD_F"].eq(
+    "CANTIDAD_F>1"
+)
+df_resultado.loc[
+    mask_alert_f,
+    "estado"
+] = "Presenta novedad en las cantidades (F)"
+df_resultado.loc[mask_alert_f, "faltantes"] = ""
+df_resultado.loc[mask_alert_f, "sobrantes"] = ""
+
+
+# --- 5) Si hay alerta Axx cantidad>1: estado = novedad cantidades (sin borrar estado_codigo)
 mask_alert_a = df_resultado["ALERTA_CANTIDAD_A"].eq("CANTIDAD_A>1")
 df_resultado.loc[mask_alert_a, "estado"] = "Presenta novedad en las cantidades (A)"
 df_resultado.loc[mask_alert_a, "faltantes"] = ""
@@ -967,6 +1080,7 @@ COLUMNAS_SALIDA = [
     "ALERTA_CANTIDAD", "DETALLE_CANTIDAD",
     "ALERTA_CANTIDAD_A", "DETALLE_CANTIDAD_A",
     "ALERTA_CANTIDAD_D", "DETALLE_CANTIDAD_D",
+    "ALERTA_CANTIDAD_F", "DETALLE_CANTIDAD_F",
     "ALERTA_DUPLICADO_MO", "DETALLE_DUPLICADO_MO",
     "sobrantes"
 ]
@@ -984,6 +1098,8 @@ df_resultado = df_resultado.rename(columns={
     "DETALLE_CANTIDAD_A": "detalle_cantidad_A",
     "ALERTA_CANTIDAD_D": "alerta_cantidad_D",
     "DETALLE_CANTIDAD_D": "detalle_cantidad_D",
+    "ALERTA_CANTIDAD_F": "alerta_cantidad_F",
+    "DETALLE_CANTIDAD_F": "detalle_cantidad_F",
 })
 # ============================================================
 # HOJA DUPLICADOS MO
@@ -1935,6 +2051,7 @@ print(
 # - tipo = CON
 # - item_cont comienza por A o C
 # - o corresponde a D01-D04, en versión U o R
+# - o corresponde a F01U o F01R
 # - cantidad > 1 -> ALERTA
 #
 # La alerta requiere revisión del analista y no significa
@@ -2022,6 +2139,7 @@ def validar_alerta_cantidades_mo(df_export_in):
     # - Solo Mano de Obra: tipo = CON
     # - item_cont comienza por A o C
     # - o corresponde a D01-D04, en versión U o R
+    # - o corresponde a F01U o F01R
     # - cantidad mayor a 1
     # ========================================================
 
@@ -2032,9 +2150,12 @@ def validar_alerta_cantidades_mo(df_export_in):
         "D04U", "D04R",
     }
 
+    items_f_controlados = {"F01U", "F01R"}
+
     mask_mo_controlada = (
         df["item_cont"].str.startswith(("A", "C"))
         | df["item_cont"].isin(items_d_controlados)
+        | df["item_cont"].isin(items_f_controlados)
     )
 
     df_alerta = df[
@@ -2519,6 +2640,21 @@ if col_alerta_d and col_detalle_d:
         v = ws.cell(row=r, column=col_alerta_d).value
         if str(v).strip().upper() == "CANTIDAD_D>1":
             c = ws.cell(row=r, column=col_detalle_d)
+            c.fill = fill_rojo
+            c.font = font_blanco
+
+# --- Pintar en rojo detalle_cantidad_F cuando haya CANTIDAD_F>1
+col_alerta_f = headers.get("alerta_cantidad_F")
+col_detalle_f = headers.get("detalle_cantidad_F")
+
+if col_alerta_f and col_detalle_f:
+    fill_rojo = PatternFill("solid", fgColor="FF0000")
+    font_blanco = Font(color="FFFFFF", bold=True)
+
+    for r in range(2, ws.max_row + 1):
+        v = ws.cell(row=r, column=col_alerta_f).value
+        if str(v).strip().upper() == "CANTIDAD_F>1":
+            c = ws.cell(row=r, column=col_detalle_f)
             c.fill = fill_rojo
             c.font = font_blanco
 
