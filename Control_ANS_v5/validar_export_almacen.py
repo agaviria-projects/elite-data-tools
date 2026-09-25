@@ -8,9 +8,10 @@ from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import DataBarRule
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 
 def normalizar_mo(valor):
@@ -718,10 +719,13 @@ def _alertas_cantidad_prefijo(df_export_in, prefijo="A"):
     print("\n========== DEBUG CANTIDADES A ==========")
 
     print(
-        df_con[
-            ["pedido", "subz", "MO_BASE", "cantidad", "CANT_NUM"]
+        df_con.loc[
+            df_con["MO_BASE"]
+            .fillna("")
+            .astype(str)
+            .str.startswith("A"),
+            ["pedido", "subz", "MO_BASE", "cantidad", "CANT_NUM"],
         ]
-        .query("MO_BASE.str.startswith('A')", engine="python")
         .head(30)
         .to_string(index=False)
     )    
@@ -1429,11 +1433,23 @@ print(
 #   - Cualquier item_cont diferente genera alerta
 #
 # AEJDO:
-#   - Debe tener:
-#       CALE1F
-#       A12U o A12R
-#       A18U o A18R
-#       A19U o A19R
+#   - Regla bidireccional entre A12U/A12R y CALE1F:
+#       si tiene A12U o A12R, debe tener CALE1F
+#       si tiene CALE1F, debe tener A12U o A12R
+#   - A18U/A18R y A19U/A19R no hacen parte de esta regla
+#   - 215887 y 219404 deben registrar vlr_cliente mayor que 0
+#   - A18U/R requiere el suministro 211357
+#   - A02U/R requiere A06U/R o A08U/R, con la misma terminacion
+#   - A10U/R requiere A12U/R, con la misma terminacion
+#   - A07U/R requiere el suministro 200384
+#   - 200092 requiere 200410 o 200492
+#   - 200093 requiere 200411, 200493 o 323739
+#   - A32U/R requiere simultaneamente 200151A y 211319A
+#
+# DSPRE:
+#   - Si aparece A13U/R, debe existir A22U/R (o A022U/R)
+#     con la misma terminacion.
+#   - Si ambos estan presentes, cumple y no genera observacion.
 #
 # Esta hoja NO valida Rural/Urbano.
 # ============================================================
@@ -1457,6 +1473,8 @@ def validar_reglas_actividades(df_export_in):
         "actividad",
         "item_cont",
         "item_res",
+        "cantidad",
+        "vlr_cliente",
     }
 
     columnas_faltantes = (
@@ -1476,12 +1494,19 @@ def validar_reglas_actividades(df_export_in):
 
     df = df_export_in.copy()
 
+    # En algunos exportes el suministro se encuentra en la columna
+    # "suminis" (columna S) y en otros se replica en "item_res".
+    # Se reconocen ambas ubicaciones para mantener compatibilidad.
+    if "suminis" not in df.columns:
+        df["suminis"] = ""
+
     for columna in [
         "pedido",
         "subz",
         "actividad",
         "item_cont",
         "item_res",
+        "suminis",
     ]:
         df[columna] = (
             df[columna]
@@ -1492,6 +1517,50 @@ def validar_reglas_actividades(df_export_in):
         )
 
     resultados = []
+
+    def convertir_numero(valor):
+        """Convierte valores numericos de Fenix, incluyendo formatos locales."""
+        if pd.isna(valor):
+            return 0.0
+
+        texto = str(valor).strip().replace("$", "").replace(" ", "")
+
+        if texto.upper() in {"", "NAN", "NONE"}:
+            return 0.0
+
+        if "," in texto and "." in texto:
+            if texto.rfind(",") > texto.rfind("."):
+                texto = texto.replace(".", "").replace(",", ".")
+            else:
+                texto = texto.replace(",", "")
+        elif "," in texto:
+            texto = texto.replace(",", ".")
+
+        try:
+            return float(texto)
+        except ValueError:
+            return 0.0
+
+    def agregar_alerta_actividad(
+        pedido,
+        subzona,
+        actividad,
+        tipo_alerta,
+        encontrados,
+        faltantes,
+        detalle,
+        no_permitidos=None,
+    ):
+        resultados.append({
+            "pedido": pedido,
+            "subzona": subzona,
+            "actividad": actividad,
+            "tipo_alerta": tipo_alerta,
+            "items_encontrados": ", ".join(encontrados),
+            "items_faltantes": ", ".join(faltantes),
+            "items_no_permitidos": ", ".join(no_permitidos or []),
+            "detalle": detalle,
+        })
 
     for (pedido, subzona, actividad), grupo in df.groupby(
         ["pedido", "subz", "actividad"]
@@ -1506,6 +1575,15 @@ def validar_reglas_actividades(df_export_in):
             x for x in grupo["item_res"]
             if x
         }
+
+        items_suminis = {
+            x for x in grupo["suminis"]
+            if x
+        }
+
+        # Conjunto unificado de suministros. Evita depender de que el
+        # exporte replique el codigo en item_res y en suminis.
+        suministros = items_res | items_suminis
 
         # ====================================================
         # AMRTR
@@ -1801,54 +1879,191 @@ def validar_reglas_actividades(df_export_in):
 
         elif actividad == "AEJDO":
 
-            # Cada grupo A acepta su variante urbana o rural.
-            # Solo se considera faltante cuando no aparece
-            # ninguna de las dos alternativas del grupo.
-            requisitos = [
-                ("CALE1F", {"CALE1F"}),
-                ("A12U/A12R", {"A12U", "A12R"}),
-                ("A18U/A18R", {"A18U", "A18R"}),
-                ("A19U/A19R", {"A19U", "A19R"}),
-            ]
+            # A12 es una mano de obra y se busca en item_cont.
+            # CALE1F es un suministro y se busca en item_res.
+            # La regla solo genera alerta cuando aparece uno de
+            # los dos lados sin su correspondiente contraparte.
+            alternativas_a12 = {"A12U", "A12R"}
+
+            a12_encontrados = sorted(
+                items_cont & alternativas_a12
+            )
+            tiene_a12 = bool(a12_encontrados)
+            tiene_cale1f = "CALE1F" in suministros
 
             faltantes = []
-            encontrados = []
+            encontrados = list(a12_encontrados)
 
-            for etiqueta, alternativas in requisitos:
+            if tiene_cale1f:
+                encontrados.append("CALE1F")
 
-                presentes = sorted(
-                    items_res & alternativas
-                )
+            if tiene_a12 and not tiene_cale1f:
+                faltantes.append("CALE1F")
 
-                if presentes:
-                    encontrados.extend(
-                        presentes
-                    )
-                else:
-                    faltantes.append(
-                        etiqueta
-                    )
+            if tiene_cale1f and not tiene_a12:
+                faltantes.append("A12U/A12R")
 
             if faltantes:
 
-                resultados.append({
-                    "pedido": pedido,
-                    "subzona": subzona,
-                    "actividad": actividad,
-                    "tipo_alerta": "REGLA_AEJDO",
-                    "items_encontrados": ", ".join(
-                        encontrados
-                    ),
-                    "items_faltantes": ", ".join(
-                        faltantes
-                    ),
-                    "items_no_permitidos": "",
-                    "detalle": (
-                        "AEJDO no tiene todos los ítems obligatorios. "
-                        "Faltan: "
-                        + ", ".join(faltantes)
-                    ),
-                })
+                agregar_alerta_actividad(
+                    pedido,
+                    subzona,
+                    actividad,
+                    "REGLA_AEJDO",
+                    encontrados,
+                    faltantes,
+                    "AEJDO no cumple la relación entre A12U/A12R y "
+                    "CALE1F. Falta: " + ", ".join(faltantes),
+                )
+
+            # Los suministros 215887 y 219404 deben llevar cobro.
+            # La cantidad reportada no modifica esta validacion.
+            for codigo_cobro in ("215887", "219404"):
+                filas_codigo = grupo[
+                    grupo["item_res"].eq(codigo_cobro)
+                    | grupo["suminis"].eq(codigo_cobro)
+                ]
+
+                for _, fila_codigo in filas_codigo.iterrows():
+                    valor_cliente = convertir_numero(
+                        fila_codigo.get("vlr_cliente")
+                    )
+
+                    if valor_cliente == 0:
+                        cantidad = fila_codigo.get("cantidad", "")
+                        agregar_alerta_actividad(
+                            pedido,
+                            subzona,
+                            actividad,
+                            "COBRO_FALTANTE_AEJDO",
+                            [codigo_cobro],
+                            ["vlr_cliente mayor a 0"],
+                            f"El suministro {codigo_cobro} de AEJDO debe "
+                            "llevar cobro al cliente, independientemente "
+                            f"de la cantidad ({cantidad}). Se encontró "
+                            "vlr_cliente=0.",
+                        )
+
+            # Reglas activadas por cada mano de obra y su terminacion U/R.
+            reglas_mo = {
+                "A18": {
+                    "materiales": {"211357"},
+                    "modo": "todos",
+                },
+                "A02": {
+                    "manos_obra": {"A06", "A08"},
+                    "modo": "uno",
+                },
+                "A10": {
+                    "manos_obra": {"A12"},
+                    "modo": "uno",
+                },
+                "A07": {
+                    "materiales": {"200384"},
+                    "modo": "todos",
+                },
+                "A32": {
+                    "materiales": {"200151A", "211319A"},
+                    "modo": "todos",
+                },
+            }
+
+            for base_mo, regla in reglas_mo.items():
+                for terminacion in ("U", "R"):
+                    disparador = f"{base_mo}{terminacion}"
+
+                    if disparador not in items_cont:
+                        continue
+
+                    if "manos_obra" in regla:
+                        esperados = {
+                            f"{base}{terminacion}"
+                            for base in regla["manos_obra"]
+                        }
+                        presentes = sorted(items_cont & esperados)
+                    else:
+                        esperados = set(regla["materiales"])
+                        presentes = sorted(suministros & esperados)
+
+                    if regla["modo"] == "uno":
+                        cumple = bool(presentes)
+                        faltantes_regla = [] if cumple else [
+                            " o ".join(sorted(esperados))
+                        ]
+                    else:
+                        faltantes_regla = sorted(esperados - set(presentes))
+                        cumple = not faltantes_regla
+
+                    if not cumple:
+                        agregar_alerta_actividad(
+                            pedido,
+                            subzona,
+                            actividad,
+                            f"REGLA_AEJDO_{base_mo}",
+                            [disparador] + presentes,
+                            faltantes_regla,
+                            f"Si AEJDO lleva {disparador}, debe llevar "
+                            + (
+                                "al menos uno de: "
+                                if regla["modo"] == "uno"
+                                else "obligatoriamente: "
+                            )
+                            + ", ".join(sorted(esperados))
+                            + ".",
+                        )
+
+            # Reglas activadas por suministros.
+            reglas_suministro = {
+                "200092": {"200410", "200492"},
+                "200093": {"200411", "200493", "323739"},
+            }
+
+            for disparador, alternativas in reglas_suministro.items():
+                if disparador in suministros and not (suministros & alternativas):
+                    agregar_alerta_actividad(
+                        pedido,
+                        subzona,
+                        actividad,
+                        f"REGLA_AEJDO_{disparador}",
+                        [disparador],
+                        [" o ".join(sorted(alternativas))],
+                        f"Si AEJDO lleva el suministro {disparador}, "
+                        "debe llevar al menos uno de: "
+                        + ", ".join(sorted(alternativas))
+                        + ".",
+                    )
+
+        # ====================================================
+        # DSPRE - A13 requiere A22 con la misma terminacion
+        # ====================================================
+
+        elif actividad == "DSPRE":
+
+            for terminacion in ("U", "R"):
+                alternativas_a22 = {
+                    f"A22{terminacion}",
+                    f"A022{terminacion}",
+                }
+                a22_encontrados = sorted(items_cont & alternativas_a22)
+                a13 = f"A13{terminacion}"
+
+                if a13 in items_cont and not a22_encontrados:
+                    faltante_a22 = (
+                        f"A22{terminacion} o A022{terminacion}"
+                    )
+                    texto_observacion = (
+                        "El ítem A13 incluye la instalación del nuevo "
+                        "pase (anterior acometida)."
+                    )
+                    agregar_alerta_actividad(
+                        pedido,
+                        subzona,
+                        actividad,
+                        "OBSERVACION_DSPRE",
+                        [a13],
+                        [faltante_a22],
+                        texto_observacion,
+                    )
 
     if not resultados:
         return pd.DataFrame(
@@ -2469,6 +2684,19 @@ print(
     f"{len(df_masivas)}"
 )
 
+# ============================================================
+# HOJA INFORMATIVA: GUIA_REGLAS
+#
+# Se genera siempre, aunque el informe no tenga alertas.
+# Resume las reglas vigentes para consulta del usuario.
+# No modifica ninguna validación ni sus resultados.
+# ============================================================
+
+# La hoja se crea vacía y se construye con formato tipo documento
+# después de exportar las hojas de resultados. Esto permite explicar
+# las reglas con párrafos, listas, ejemplos y tablas de consulta.
+df_guia_reglas = pd.DataFrame()
+
 
 # ============================================================
 # EXPORTAR RESULTADO
@@ -2482,6 +2710,14 @@ with pd.ExcelWriter(
     archivo,
     engine="openpyxl"
 ) as writer:
+
+    # Se deja siempre disponible como primera hoja del informe.
+    df_guia_reglas.to_excel(
+        writer,
+        sheet_name="GUIA_REGLAS",
+        index=False,
+        header=False
+    )
 
     df_resultado.to_excel(
         writer,
@@ -2566,6 +2802,11 @@ if "MASIVAS" in wb.sheetnames:
     wb[
         "MASIVAS"
     ].sheet_properties.tabColor = "5B9BD5"
+
+if "GUIA_REGLAS" in wb.sheetnames:
+    wb[
+        "GUIA_REGLAS"
+    ].sheet_properties.tabColor = "000000"
 
 ws = wb["VALIDACION"]
 
@@ -2834,7 +3075,7 @@ if "ALERTA_CANTIDADES" in wb.sheetnames:
 
         col_cantidad = encabezados.get("cantidad")
 
-        if col_cantidad:
+        if col_cantidad and ws_mat.max_row >= 2:
 
             letra = get_column_letter(col_cantidad)
 
@@ -3016,25 +3257,104 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
         "items_no_permitidos"
     )
 
-    if col_no_permitidos:
+    col_items_faltantes = encabezados_act.get(
+        "items_faltantes"
+    )
 
-        fill_rojo = PatternFill(
-            "solid",
-            fgColor="C00000"
-        )
+    col_tipo_alerta_act = encabezados_act.get(
+        "tipo_alerta"
+    )
 
-        for fila in range(
-            2,
-            ws_act.max_row + 1
-        ):
-            celda = ws_act.cell(
+    col_detalle_act = encabezados_act.get(
+        "detalle"
+    )
+
+    # Las filas que requieren revision se resaltan claramente:
+    # - tipo_alerta, items_faltantes e items_no_permitidos: rojo
+    # - detalle: amarillo fuerte para facilitar su lectura
+    # El color no representa U o R; solo el nivel de atencion.
+    fill_rojo_alerta = PatternFill(
+        "solid",
+        fgColor="C00000"
+    )
+
+    fill_detalle_alerta = PatternFill(
+        "solid",
+        fgColor="FFD966"
+    )
+
+    for fila in range(2, ws_act.max_row + 1):
+        tipo_alerta = str(
+            ws_act.cell(
                 row=fila,
-                column=col_no_permitidos
+                column=col_tipo_alerta_act
+            ).value or ""
+        ) if col_tipo_alerta_act else ""
+
+        if tipo_alerta.startswith("OBSERVACION"):
+            continue
+
+        # Resaltar en rojo únicamente la columna items_faltantes
+        if col_items_faltantes:
+            celda_faltantes = ws_act.cell(
+                row=fila,
+                column=col_items_faltantes
             )
 
-            if celda.value:
-                celda.fill = fill_rojo
-                celda.font = font_blanco
+            if celda_faltantes.value:
+                celda_faltantes.fill = fill_rojo_alerta
+                celda_faltantes.font = font_blanco
+
+        if col_detalle_act:
+            celda_detalle = ws_act.cell(
+                row=fila,
+                column=col_detalle_act
+            )
+            celda_detalle.fill = fill_detalle_alerta
+            celda_detalle.font = Font(
+                color="000000",
+                bold=True
+            )
+
+    # Las observaciones de DSPRE son informativas y se distinguen
+    # visualmente de las filas que requieren correccion.
+    if col_tipo_alerta_act:
+
+        for fila in range(2, ws_act.max_row + 1):
+            tipo_alerta = str(
+                ws_act.cell(
+                    row=fila,
+                    column=col_tipo_alerta_act
+                ).value or ""
+            )
+
+            if tipo_alerta.startswith("OBSERVACION"):
+
+                # El A22 faltante se resalta en rojo
+                if col_items_faltantes:
+                    celda_faltante = ws_act.cell(
+                        row=fila,
+                        column=col_items_faltantes
+                    )
+
+                    if celda_faltante.value:
+                        celda_faltante.fill = fill_rojo_alerta
+                        celda_faltante.font = Font(
+                            color="FFFFFF",
+                            bold=True
+                        )
+
+                # El detalle se resalta en amarillo
+                if col_detalle_act:
+                    celda_detalle = ws_act.cell(
+                        row=fila,
+                        column=col_detalle_act
+                    )
+                    celda_detalle.fill = fill_detalle_alerta
+                    celda_detalle.font = Font(
+                        color="000000",
+                        bold=True
+                    )
 
     for columna in ws_act.columns:
 
@@ -3226,6 +3546,10 @@ if "ALERTA_CANTIDADES_MO" in wb.sheetnames:
         "cantidad"
     )
 
+    col_detalle_leg = encabezados_leg.get(
+        "detalle"
+    )
+
     if col_cantidad_leg:
 
         fill_rojo = PatternFill(
@@ -3244,6 +3568,28 @@ if "ALERTA_CANTIDADES_MO" in wb.sheetnames:
 
             celda.fill = fill_rojo
             celda.font = font_blanco
+
+    # El detalle explica por qué se generó la alerta de cantidad.
+    # Se resalta en amarillo fuerte para orientar al analista.
+    if col_detalle_leg:
+        fill_detalle_leg = PatternFill(
+            "solid",
+            fgColor="FFD966"
+        )
+
+        for fila in range(
+            2,
+            ws_leg.max_row + 1
+        ):
+            celda = ws_leg.cell(
+                row=fila,
+                column=col_detalle_leg
+            )
+            celda.fill = fill_detalle_leg
+            celda.font = Font(
+                color="000000",
+                bold=True
+            )
 
     for columna in ws_leg.columns:
 
@@ -3406,6 +3752,522 @@ if "MASIVAS" in wb.sheetnames:
                 vertical="center",
                 wrap_text=True
             )
+
+# ============================================================
+# FORMATO HOJA GUIA_REGLAS
+# Se presenta como una tabla breve y siempre visible.
+# ============================================================
+
+if "GUIA_REGLAS" in wb.sheetnames:
+
+    ws_guia = wb["GUIA_REGLAS"]
+
+    ws_guia.sheet_view.showGridLines = False
+    ws_guia.freeze_panes = "A5"
+
+    ws_guia["A1"] = "Guía de reglas de negocio"
+    ws_guia["A1"].font = Font(
+        name="Arial",
+        size=14,
+        bold=True,
+        color="1F4E78"
+    )
+
+    ws_guia["A2"] = (
+        "Consulta esta hoja para conocer cómo aplica cada validación del informe. "
+        "Las alertas apoyan la revisión; la validación final corresponde al analista."
+    )
+    ws_guia["A2"].font = Font(
+        name="Arial",
+        size=10,
+        italic=True,
+        color="595959"
+    )
+
+    ws_guia["A3"] = (
+        "Guía actualizada con las reglas incluidas en esta ejecución: "
+        f"{datetime.now():%Y-%m-%d}"
+    )
+    ws_guia["A3"].font = Font(
+        name="Arial",
+        size=9,
+        color="7F6000"
+    )
+
+    fila_encabezado = 4
+    fila_final = ws_guia.max_row
+    columna_final = get_column_letter(ws_guia.max_column)
+
+    # Tabla estructurada con filtros y filas alternadas.
+    if fila_final > fila_encabezado:
+        tabla_guia = Table(
+            displayName="TablaGuiaReglas",
+            ref=f"A{fila_encabezado}:{columna_final}{fila_final}"
+        )
+
+        estilo_tabla_guia = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False
+        )
+
+        tabla_guia.tableStyleInfo = estilo_tabla_guia
+        ws_guia.add_table(tabla_guia)
+
+    fill_encabezado_guia = PatternFill(
+        "solid",
+        fgColor="1F4E78"
+    )
+
+    font_encabezado_guia = Font(
+        name="Arial",
+        size=10,
+        bold=True,
+        color="FFFFFF"
+    )
+
+    for celda in ws_guia[fila_encabezado]:
+        celda.fill = fill_encabezado_guia
+        celda.font = font_encabezado_guia
+        celda.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+            wrap_text=True
+        )
+
+    anchos_guia = {
+        "A": 27,
+        "B": 27,
+        "C": 58,
+        "D": 58,
+        "E": 44,
+    }
+
+    for letra, ancho in anchos_guia.items():
+        ws_guia.column_dimensions[letra].width = ancho
+
+    ws_guia.row_dimensions[fila_encabezado].height = 30
+
+    for fila in ws_guia.iter_rows(
+        min_row=fila_encabezado + 1,
+        max_row=fila_final,
+        min_col=1,
+        max_col=ws_guia.max_column
+    ):
+        ws_guia.row_dimensions[fila[0].row].height = 48
+
+        for celda in fila:
+            celda.font = Font(
+                name="Arial",
+                size=10,
+                color="000000"
+            )
+            celda.alignment = Alignment(
+                horizontal="left",
+                vertical="top",
+                wrap_text=True
+            )
+
+    ws_guia.page_setup.orientation = "landscape"
+    ws_guia.page_setup.fitToWidth = 1
+    ws_guia.page_setup.fitToHeight = 0
+    ws_guia.sheet_properties.pageSetUpPr.fitToPage = True
+    ws_guia.print_title_rows = "1:4"
+
+    # Al abrir el archivo, la guía será la primera hoja visible.
+    wb.active = wb["GUIA_REGLAS"]
+    ws_guia.sheet_view.tabSelected = True
+
+
+# ============================================================
+# GUIA_REGLAS DETALLADA
+# Presenta las reglas como documento de consulta dentro de Excel.
+# ============================================================
+
+if "GUIA_REGLAS" in wb.sheetnames:
+
+    ws_guia = wb["GUIA_REGLAS"]
+
+    # Limpiar el contenido provisional y cualquier combinación previa.
+    for rango_combinado in list(ws_guia.merged_cells.ranges):
+        ws_guia.unmerge_cells(str(rango_combinado))
+
+    ws_guia.delete_rows(1, ws_guia.max_row)
+    ws_guia.sheet_view.showGridLines = False
+    ws_guia.freeze_panes = "A5"
+
+    ws_guia.column_dimensions["A"].width = 32
+    ws_guia.column_dimensions["B"].width = 72
+    ws_guia.column_dimensions["C"].width = 62
+
+    fill_seccion = PatternFill("solid", fgColor="262626")
+    fill_tabla = PatternFill("solid", fgColor="1F4E78")
+    fill_alterno = PatternFill("solid", fgColor="D9E7F5")
+    font_blanca = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    font_normal = Font(name="Arial", size=10, color="000000")
+    borde_guia = Border(
+        left=Side(style="thin", color="D9D9D9"),
+        right=Side(style="thin", color="D9D9D9"),
+        top=Side(style="thin", color="D9D9D9"),
+        bottom=Side(style="thin", color="D9D9D9"),
+    )
+
+    estado_guia = {"fila": 1}
+
+    def agregar_texto_guia(
+        texto,
+        negrita=False,
+        cursiva=False,
+        color="000000",
+        altura=None,
+    ):
+        fila = estado_guia["fila"]
+        ws_guia.merge_cells(
+            start_row=fila,
+            start_column=1,
+            end_row=fila,
+            end_column=3,
+        )
+        celda = ws_guia.cell(fila, 1, texto)
+        celda.font = Font(
+            name="Arial",
+            size=10,
+            bold=negrita,
+            italic=cursiva,
+            color=color,
+        )
+        celda.alignment = Alignment(vertical="top", wrap_text=True)
+
+        if altura is None:
+            altura = max(22, min(66, 18 * (1 + len(str(texto)) // 145)))
+
+        ws_guia.row_dimensions[fila].height = altura
+        estado_guia["fila"] += 1
+
+    def agregar_seccion_guia(titulo):
+        estado_guia["fila"] += 1
+        fila = estado_guia["fila"]
+
+        ws_guia.merge_cells(
+            start_row=fila,
+            start_column=1,
+            end_row=fila,
+            end_column=3,
+        )
+
+        celda = ws_guia.cell(fila, 1, titulo)
+        celda.fill = fill_seccion
+        celda.font = Font(
+            name="Arial",
+            size=11,
+            bold=True,
+            color="FFFFFF",
+        )
+        celda.alignment = Alignment(vertical="center", wrap_text=True)
+        ws_guia.row_dimensions[fila].height = 25
+        estado_guia["fila"] += 1
+
+    def agregar_tabla_guia(encabezados, filas):
+        fila_inicio = estado_guia["fila"]
+
+        for columna, encabezado in enumerate(encabezados, start=1):
+            celda = ws_guia.cell(fila_inicio, columna, encabezado)
+            celda.fill = fill_tabla
+            celda.font = font_blanca
+            celda.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+                wrap_text=True,
+            )
+            celda.border = borde_guia
+
+        ws_guia.row_dimensions[fila_inicio].height = 28
+
+        for indice, valores in enumerate(filas, start=1):
+            fila = fila_inicio + indice
+
+            for columna, valor in enumerate(valores, start=1):
+                celda = ws_guia.cell(fila, columna, valor)
+                celda.font = font_normal
+                celda.alignment = Alignment(vertical="top", wrap_text=True)
+                celda.border = borde_guia
+
+                if indice % 2 == 1:
+                    celda.fill = fill_alterno
+
+            largo_maximo = max(len(str(valor)) for valor in valores)
+            ws_guia.row_dimensions[fila].height = max(
+                30,
+                min(66, 18 * (1 + largo_maximo // 75)),
+            )
+
+        estado_guia["fila"] = fila_inicio + len(filas) + 1
+
+    # Encabezado
+    ws_guia.merge_cells("A1:C1")
+    ws_guia["A1"] = "Guía de reglas de negocio"
+    ws_guia["A1"].font = Font(
+        name="Arial",
+        size=15,
+        bold=True,
+        color="000000",
+    )
+    ws_guia["A1"].alignment = Alignment(vertical="center")
+    ws_guia.row_dimensions[1].height = 28
+
+    estado_guia["fila"] = 2
+    agregar_texto_guia(
+        "Esta hoja explica cómo funciona cada validación del informe. "
+        "Las alertas facilitan la revisión, pero la validación final corresponde al analista.",
+        cursiva=True,
+        color="595959",
+        altura=30,
+    )
+    agregar_texto_guia(
+        "Guía actualizada con las reglas incluidas en esta ejecución: "
+        f"{datetime.now():%Y-%m-%d}",
+        color="7F6000",
+        altura=22,
+    )
+
+    # 1. Validación MO vs. materiales
+    agregar_seccion_guia("1. Validación de Mano de Obra vs. Materiales")
+    agregar_texto_guia(
+        "La hoja VALIDACION compara la mano de obra reportada en Fénix con los "
+        "materiales definidos en la Base Maestra."
+    )
+    agregar_texto_guia(
+        "Según la regla de cada mano de obra, algunos materiales son obligatorios "
+        "y, en otros casos, es suficiente encontrar uno de los materiales permitidos."
+    )
+    agregar_tabla_guia(
+        ["Resultado", "Significado", "Ejemplo"],
+        [
+            ["OK", "Los materiales cumplen la regla.", "Se encontraron los materiales requeridos."],
+            ["FALTAN", "No se encontraron materiales obligatorios.", "Falta uno de los materiales definidos en la Base Maestra."],
+            ["SOBRAN", "Aparecen materiales no definidos para la mano de obra.", "Se encontró un material adicional no permitido."],
+            ["AMBOS", "Faltan materiales obligatorios y existen materiales adicionales.", "El pedido tiene faltantes y sobrantes al mismo tiempo."],
+        ],
+    )
+
+    # 2. Cantidades y duplicidad
+    agregar_seccion_guia("2. Alertas de cantidad y duplicidad de Mano de Obra")
+    agregar_texto_guia(
+        "La hoja VALIDACION incluye columnas adicionales para identificar novedades "
+        "relacionadas con las cantidades y la duplicidad de las manos de obra."
+    )
+    agregar_texto_guia(
+        "La alerta de cantidad aplica a las manos de obra controladas de los grupos "
+        "A, C, D y F cuando la cantidad registrada es mayor a 1.",
+        negrita=True,
+    )
+    agregar_tabla_guia(
+        ["Alerta", "¿Cuándo se activa?", "Ejemplo"],
+        [
+            ["alerta_cantidad_A", "El código comienza por A y la cantidad es mayor a 1.", "A21R con cantidad 4 genera CANTIDAD_A>1."],
+            ["alerta_cantidad_C", "El código comienza por C y la cantidad es mayor a 1.", "C02U con cantidad 2 genera CANTIDAD>1."],
+            ["alerta_cantidad_D", "D01U/R, D02U/R, D03U/R o D04U/R tiene cantidad mayor a 1.", "D01U con cantidad 2 genera CANTIDAD_D>1."],
+            ["alerta_cantidad_F", "F01U o F01R tiene cantidad mayor a 1.", "F01R con cantidad 2 genera CANTIDAD_F>1."],
+            ["alerta_duplicado_MO", "La misma mano de obra aparece más de una vez para el mismo pedido y subzona.", "C01U registrado dos veces genera MO_DUPLICADA."],
+        ],
+    )
+    agregar_texto_guia(
+        "Las columnas detalle_cantidad_A, detalle_cantidad_C, detalle_cantidad_D, "
+        "detalle_cantidad_F y detalle_duplicado_MO muestran el código, la cantidad "
+        "o la información específica que generó la alerta."
+    )
+
+    # 3. Mano de obra duplicada
+    agregar_seccion_guia("3. Mano de Obra duplicada")
+    agregar_texto_guia(
+        "La hoja MO_DUPLICADAS presenta de forma más clara las manos de obra que "
+        "aparecen más de una vez para un mismo pedido y subzona. Aunque la novedad "
+        "también aparece en VALIDACION, aquí se consulta el pedido, la mano de obra "
+        "y la cantidad de veces que está repetida."
+    )
+    agregar_texto_guia(
+        "Regla: una misma mano de obra no debe aparecer dos o más veces para un solo pedido.",
+        negrita=True,
+    )
+
+    # 4. Cantidad de materiales
+    agregar_seccion_guia("4. Alerta de cantidad de materiales")
+    agregar_texto_guia(
+        "La hoja ALERTA_CANTIDADES muestra los materiales cuya cantidad reportada "
+        "es mayor a 1. Permite consultar la subzona, el código del material, la "
+        "cantidad encontrada y el detalle de la alerta."
+    )
+    agregar_texto_guia(
+        "Esta alerta no significa necesariamente que exista un error. El analista "
+        "debe revisar si la cantidad corresponde a la operación realizada o si "
+        "requiere algún ajuste."
+    )
+
+    # 5. Rural/Urbano
+    agregar_seccion_guia("5. Alerta Rural/Urbano")
+    agregar_texto_guia(
+        "La hoja ALERTA_RURAL_URBANO verifica que la terminación de la mano de obra "
+        "coincida con la clasificación del pedido."
+    )
+    agregar_tabla_guia(
+        ["Clasificación", "Terminación esperada", "Resultado si no coincide"],
+        [
+            ["Rural (R)", "El código debe terminar en R.", "INCONSISTENCIA_RURAL_URBANO"],
+            ["Urbano (U)", "El código debe terminar en U.", "INCONSISTENCIA_RURAL_URBANO"],
+        ],
+    )
+
+    # 6. Actividades
+    agregar_seccion_guia("6. Alerta por actividades")
+    agregar_texto_guia(
+        "La hoja ALERTA_ACTIVIDADES verifica que cada actividad tenga las manos de "
+        "obra definidas en su regla de negocio."
+    )
+    agregar_tabla_guia(
+        ["Actividad", "Códigos válidos", "Aplicación de la regla"],
+        [
+            ["AMRTR", "D02U/R, D03U/R o D04U/R", "Debe aparecer al menos uno de los códigos válidos."],
+            ["ACREV", "D01U o D01R", "Debe aparecer D01U o D01R, según corresponda."],
+            ["ACAMN y ALECA", "C05U o C05R", "Debe aparecer C05U o C05R."],
+            ["ALEGA y ALEGN", "C01U/R, C02U/R, C03U/R o C04U/R", "Debe aparecer uno de los códigos permitidos."],
+            ["AEJDO", "CALE1F junto con A12U o A12R", "La relación es bidireccional: si aparece uno, debe aparecer el otro."],
+        ],
+    )
+    agregar_texto_guia(
+        "Si no aparece uno de los códigos requeridos, se genera FALTA ÍTEM VÁLIDO. "
+        "Si aparece un código diferente a los permitidos, se genera ERROR EN DIGITACIÓN."
+    )
+    agregar_texto_guia(
+        "Reglas complementarias de AEJDO: las validaciones siguientes se presentan "
+        "en la misma hoja ALERTA_ACTIVIDADES para facilitar la revisión del analista.",
+        negrita=True,
+        altura=30,
+    )
+    agregar_tabla_guia(
+        ["Condición encontrada", "Requisito", "Resultado si no cumple"],
+        [
+            ["Suministros 215887 o 219404", "Para la actividad AEJDO, si alguno de estos suministros lleva cantidad, debe registrar cobro al usuario en vlr_cliente.", "COBRO_FALTANTE_AEJDO. Ejemplo: 215887 con cantidad mayor a 0 y vlr_cliente = 0 genera alerta."],
+            ["A18U o A18R", "Debe llevar obligatoriamente el suministro 211357.", "REGLA_AEJDO_A18."],
+            ["A02U o A02R", "Debe llevar A06U/R o A08U/R con la misma terminación. Uno de los dos es suficiente.", "REGLA_AEJDO_A02."],
+            ["A10U o A10R", "Debe llevar A12U/R con la misma terminación.", "REGLA_AEJDO_A10."],
+            ["A07U o A07R", "Debe llevar obligatoriamente el suministro 200384.", "REGLA_AEJDO_A07."],
+            ["Suministro 200092", "Debe llevar 200410 o 200492. Uno de los dos es suficiente.", "REGLA_AEJDO_200092."],
+            ["Suministro 200093", "Debe llevar 200411, 200493 o 323739. Uno de los tres es suficiente.", "REGLA_AEJDO_200093."],
+            ["A32U o A32R", "Debe llevar obligatoriamente los dos suministros: 200151A y 211319A.", "REGLA_AEJDO_A32."],
+        ],
+    )
+    agregar_texto_guia(
+        "Regla de DSPRE: para esta actividad, si se registra el ítem A13U o A13R, "
+        "debe incluirse el código correspondiente A22U o A22R, respectivamente. "
+        "Si falta el A22 correspondiente, se genera una alerta y la columna detalle "
+        "indica: El ítem A13 incluye la instalación del nuevo pase (anterior acometida).",
+        negrita=True,
+        altura=48,
+    )
+
+    # 7. Legalizaciones sin cobro
+    agregar_seccion_guia("7. Legalizaciones sin cobro al cliente")
+    agregar_texto_guia(
+        "La hoja LEGALIZACION_NO_COBRO identifica cobros no permitidos en las "
+        "actividades ACAMN, ALECA, ALEGA y ALEGN."
+    )
+    agregar_tabla_guia(
+        ["Suministro", "Descripción", "Regla"],
+        [
+            ["215887A", "Tornillo", "No debe registrar valor en vlr_cliente."],
+            ["219404A", "Sello", "No debe registrar valor en vlr_cliente."],
+        ],
+    )
+    agregar_texto_guia(
+        "Si alguno de estos suministros presenta un valor mayor a cero, se genera "
+        "la alerta COBRO_NO_PERMITIDO para revisión del analista."
+    )
+
+    # 8. Cantidad de mano de obra
+    agregar_seccion_guia("8. Alerta de cantidad de Mano de Obra")
+    agregar_texto_guia(
+        "La hoja ALERTA_CANTIDADES_MO presenta de forma detallada y visual las manos "
+        "de obra controladas cuya cantidad es mayor a 1."
+    )
+    agregar_tabla_guia(
+        ["Grupo", "Códigos controlados", "Ejemplo de alerta"],
+        [
+            ["A", "Cualquier item_cont que comience por A.", "A21R con cantidad 4."],
+            ["C", "Cualquier item_cont que comience por C.", "C02U con cantidad 2."],
+            ["D", "D01U/R, D02U/R, D03U/R y D04U/R.", "D01U con cantidad 2."],
+            ["F", "F01U y F01R.", "F01R con cantidad 2."],
+        ],
+    )
+    agregar_texto_guia(
+        "Aunque esta novedad también aparece en la hoja VALIDACION, aquí el analista "
+        "puede consultar fácilmente el pedido, el código, la cantidad encontrada y "
+        "el detalle de la alerta."
+    )
+
+    # 9. Instalaciones masivas
+    agregar_seccion_guia("9. Validación de instalaciones masivas")
+    agregar_texto_guia(
+        "La hoja MASIVAS verifica que la mano de obra registrada corresponda con la "
+        "cantidad de instalaciones asociadas a una misma pagina_base."
+    )
+    agregar_texto_guia(
+        "El proceso toma los primeros 14 dígitos de pagina para formar pagina_base, "
+        "agrupa por subzona y pagina_base, y cuenta las instalaciones diferentes "
+        "usando el valor completo de pagina. Si una instalación aparece en varias "
+        "filas, se cuenta una sola vez."
+    )
+    agregar_tabla_guia(
+        ["Cantidad de instalaciones", "Mano de obra esperada", "Ejemplo"],
+        [
+            ["1 instalación", "C01U o C01R", "Una instalación debe usar C01."],
+            ["De 2 a 12 instalaciones", "C02U o C02R", "Diez instalaciones deben usar C02."],
+            ["De 13 a 24 instalaciones", "C03U o C03R", "Veinte instalaciones deben usar C03."],
+            ["25 instalaciones en adelante", "C04U o C04R", "Veinticinco instalaciones deben usar C04."],
+        ],
+    )
+    agregar_texto_guia(
+        "Si la mano de obra registrada no corresponde con la cantidad de instalaciones "
+        "encontradas, se genera una alerta para revisión del analista."
+    )
+    agregar_texto_guia(
+        "Estas alertas facilitan la revisión, pero cada una debe ser validada por el "
+        "analista, ya que el registro puede ser correcto aunque el sistema lo marque "
+        "como una posible novedad.",
+        negrita=True,
+        altura=36,
+    )
+
+    # 10. Publicación
+    agregar_seccion_guia("10. Publicación del informe en OneDrive")
+    agregar_texto_guia(
+        "El archivo se comparte en OneDrive, dentro de la carpeta "
+        "Relación_MO_Vs_Materiales, en dos momentos del día."
+    )
+    agregar_tabla_guia(
+        ["Corte", "Información incluida", "Nombre del archivo"],
+        [
+            ["Mañana, aproximadamente 6:00 a. m.", "Información digitada durante el día anterior.", "VALIDACION_MO_MATERIALES_ALMACEN_AAAA-MM-DD.xlsx"],
+            ["Tarde, aproximadamente 2:30 p. m.", "Información digitada durante el día actual hasta esa hora.", "INFORME_VALIDACION_MO_MATERIALES_ALMACEN_AAAA-MM-DD.xlsx"],
+        ],
+    )
+    agregar_texto_guia(
+        "Ejemplo: el 22 de septiembre, el archivo de la mañana puede llamarse "
+        "VALIDACION_MO_MATERIALES_ALMACEN_2026-09-21.xlsx y el archivo de la tarde "
+        "INFORME_VALIDACION_MO_MATERIALES_ALMACEN_2026-09-22.xlsx."
+    )
+
+    fila_final_guia = estado_guia["fila"] - 1
+    ws_guia.print_area = f"A1:C{fila_final_guia}"
+    ws_guia.page_setup.orientation = "landscape"
+    ws_guia.page_setup.fitToWidth = 1
+    ws_guia.page_setup.fitToHeight = 0
+    ws_guia.sheet_properties.pageSetUpPr.fitToPage = True
+    ws_guia.print_title_rows = "1:3"
+
+    wb.active = wb["GUIA_REGLAS"]
+    ws_guia.sheet_view.tabSelected = True
 
 
 wb.save(archivo)
