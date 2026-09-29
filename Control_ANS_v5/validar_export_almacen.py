@@ -1169,7 +1169,7 @@ df_material_cantidad["cantidad"] = pd.to_numeric(
 df_material_cantidad = df_material_cantidad[
     df_material_cantidad["cantidad"] > 1
 ][
-    ["pedido", "subz", "material", "cantidad"]
+    ["pedido", "actividad", "subz", "material", "cantidad"]
 ].copy()
 
 df_material_cantidad = df_material_cantidad.rename(
@@ -4096,7 +4096,7 @@ if "GUIA_REGLAS" in wb.sheetnames:
     agregar_seccion_guia("4. Alerta de cantidad de materiales")
     agregar_texto_guia(
         "La hoja ALERTA_CANTIDADES muestra los materiales cuya cantidad reportada "
-        "es mayor a 1. Permite consultar la subzona, el código del material, la "
+        "es mayor a 1. Permite consultar el pedido,actividad, subzona, el código del material, la "
         "cantidad encontrada y el detalle de la alerta."
     )
     agregar_texto_guia(
