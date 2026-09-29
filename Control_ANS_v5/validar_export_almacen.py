@@ -208,7 +208,7 @@ for _, row in df_entregados.iterrows():
             "estado": "Código de mano de obra no existe en la base maestra",
             "estado_codigo": "NO EXISTEN EN BD",
             "faltantes": "",
-            "sobrantes": ", ".join(entregados)
+            "sobrantes": ""
         })
         continue
 
@@ -4042,13 +4042,24 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "Según la regla de cada mano de obra, algunos materiales son obligatorios "
         "y, en otros casos, es suficiente encontrar uno de los materiales permitidos."
     )
+    agregar_texto_guia(
+    "¿Por qué aparece un material en sobrantes? Cada mano de obra tiene "
+    "una lista de materiales en la Base Maestra. Si en el pedido se reporta "
+    "un material que no está en la lista de esa mano de obra, el sistema "
+    "lo muestra en sobrantes para esa mano de obra. El pedido puede tener "
+    "otras manos de obra a las que sí corresponda ese material. Por eso, "
+    "el analista debe revisar el pedido completo antes de concluir que "
+    "el material realmente sobra."
+    )
+    
     agregar_tabla_guia(
         ["Resultado", "Significado", "Ejemplo"],
         [
             ["OK", "Los materiales cumplen la regla.", "Se encontraron los materiales requeridos."],
             ["FALTAN", "No se encontraron materiales obligatorios.", "Falta uno de los materiales definidos en la Base Maestra."],
-            ["SOBRAN", "Aparecen materiales no definidos para la mano de obra.", "Se encontró un material adicional no permitido."],
-            ["AMBOS", "Faltan materiales obligatorios y existen materiales adicionales.", "El pedido tiene faltantes y sobrantes al mismo tiempo."],
+            ["NO EXISTEN EN BD", "La mano de obra no tiene regla en la Base Maestra.", "No se puede concluir si faltan o sobran materiales."],
+            ["SOBRAN", "Hay materiales del pedido no asociados a esta mano de obra en la Base Maestra.", "Revisar si corresponden a otra mano de obra del mismo pedido."],
+            ["AMBOS", "Faltan materiales de esta mano de obra y hay otros no asociados a ella.", "Revisar todas las manos de obra y materiales del pedido."],
         ],
     )
 
