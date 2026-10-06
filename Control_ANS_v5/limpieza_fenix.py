@@ -152,6 +152,31 @@ nombres_excluir = [
 df = df[~df["NOMBRE"].isin(nombres_excluir)]
 
 # ------------------------------------------------------------
+# EXCLUSIÓN DE EQUIPOS — REGLA DE NEGOCIO
+# Los registros asociados a E_CV197 no entran al informe.
+# ------------------------------------------------------------
+
+equipos_excluir = {"E_CV197"}
+
+equipo_normalizado = (
+    df["EQUIPO"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+mascara_excluir = equipo_normalizado.isin(equipos_excluir)
+registros_excluidos = int(mascara_excluir.sum())
+
+df = df.loc[~mascara_excluir].copy()
+
+print(
+    f"🚫 Registros excluidos por equipo E_CV197: "
+    f"{registros_excluidos}"
+)
+
+# ------------------------------------------------------------
 # LIMPIEZA DE TEXTO
 # ------------------------------------------------------------
 for col in ["DIRECCION", "INSTALACION"]:
