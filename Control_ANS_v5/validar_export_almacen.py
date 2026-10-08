@@ -1409,6 +1409,59 @@ print(
 
 
 # ============================================================
+# ALERTA_PAGINA_7MO_DIGITO
+# Solo páginas que comienzan por 190:
+# séptimo dígito 1 -> urbano (U); séptimo dígito 2 -> rural (R).
+# Se reportan únicamente las clasificaciones opuestas.
+# ============================================================
+
+def validar_pagina_zona(df_export_in):
+    columnas_salida = [
+        "pedido", "subzona", "pagina", "septimo_digito",
+        "urbrur", "valor_esperado", "estado", "detalle",
+    ]
+    requeridas = {"pedido", "subz", "pagina", "urbrur"}
+    faltantes = requeridas - set(df_export_in.columns)
+    if faltantes:
+        print(
+            "⚠️ No se pudo ejecutar ALERTA_PAGINA_7MO_DIGITO. "
+            f"Faltan columnas: {sorted(faltantes)}"
+        )
+        return pd.DataFrame(columns=columnas_salida)
+
+    df = df_export_in[["pedido", "subz", "pagina", "urbrur"]].copy()
+    df["pagina"] = df["pagina"].fillna("").astype(str).str.strip()
+    df["urbrur"] = df["urbrur"].fillna("").astype(str).str.strip().str.upper()
+    df = df[df["pagina"].str.match(r"^190\d{4}", na=False)].copy()
+    df["septimo_digito"] = df["pagina"].str[6]
+    df = df[
+        (df["septimo_digito"].eq("1") & df["urbrur"].eq("R"))
+        | (df["septimo_digito"].eq("2") & df["urbrur"].eq("U"))
+    ].copy()
+    df["valor_esperado"] = df["septimo_digito"].map({"1": "U", "2": "R"})
+    df["estado"] = "INCONSISTENCIA_PAGINA_7MO_DIGITO"
+    df["detalle"] = df.apply(
+        lambda fila: (
+            f"La página {fila['pagina']} tiene {fila['septimo_digito']} en el "
+            f"séptimo dígito: urbrur debe ser {fila['valor_esperado']} "
+            f"y se registró {fila['urbrur']}."
+        ),
+        axis=1,
+    )
+    df = df.rename(columns={"subz": "subzona"})
+    return (
+        df[columnas_salida]
+        .drop_duplicates(subset=["pedido", "subzona", "pagina", "urbrur"])
+        .sort_values(["subzona", "pedido", "pagina"], kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+df_alerta_pagina_zona = validar_pagina_zona(df_export)
+print(f"🚨 Inconsistencias en el séptimo dígito de página encontradas: {len(df_alerta_pagina_zona)}")
+
+
+# ============================================================
 # HOJA NUEVA: ALERTA_ACTIVIDADES
 #
 # RESPONSABILIDAD EXCLUSIVA:
@@ -2743,6 +2796,12 @@ with pd.ExcelWriter(
         index=False
     )
 
+    df_alerta_pagina_zona.to_excel(
+        writer,
+        sheet_name="ALERTA_PAGINA_7MO_DIGITO",
+        index=False
+    )
+
     df_alerta_actividades.to_excel(
         writer,
         sheet_name="ALERTA_ACTIVIDADES",
@@ -2782,6 +2841,9 @@ if "ALERTA_RURAL_URBANO" in wb.sheetnames:
     wb[
         "ALERTA_RURAL_URBANO"
     ].sheet_properties.tabColor = "7030A0"
+
+if "ALERTA_PAGINA_7MO_DIGITO" in wb.sheetnames:
+    wb["ALERTA_PAGINA_7MO_DIGITO"].sheet_properties.tabColor = "9C5700"
 
 if "ALERTA_ACTIVIDADES" in wb.sheetnames:
     wb[
@@ -3202,6 +3264,27 @@ if "ALERTA_RURAL_URBANO" in wb.sheetnames:
                 vertical="center",
                 wrap_text=True
             )
+
+# ============================================================
+# FORMATO HOJA ALERTA_PAGINA_7MO_DIGITO
+# ============================================================
+
+if "ALERTA_PAGINA_7MO_DIGITO" in wb.sheetnames:
+    ws_pz = wb["ALERTA_PAGINA_7MO_DIGITO"]
+    ws_pz.freeze_panes = "A2"
+    ws_pz.auto_filter.ref = ws_pz.dimensions
+    ws_pz.sheet_view.showGridLines = False
+    for celda in ws_pz[1]:
+        celda.fill = PatternFill("solid", fgColor="9C5700")
+        celda.font = Font(color="FFFFFF", bold=True)
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+    for fila in ws_pz.iter_rows(min_row=2):
+        for celda in fila:
+            celda.fill = PatternFill("solid", fgColor="FCE4D6")
+    for columna in ws_pz.columns:
+        letra = get_column_letter(columna[0].column)
+        ancho = max((len(str(c.value)) for c in columna if c.value is not None), default=0)
+        ws_pz.column_dimensions[letra].width = min(ancho + 3, 75)
 
 # ============================================================
 # FORMATO HOJA ALERTA_ACTIVIDADES
@@ -4128,6 +4211,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["Rural (R)", "El código debe terminar en R.", "INCONSISTENCIA_RURAL_URBANO"],
             ["Urbano (U)", "El código debe terminar en U.", "INCONSISTENCIA_RURAL_URBANO"],
         ],
+    )
+
+    agregar_texto_guia(
+        "La hoja ALERTA_PAGINA_7MO_DIGITO revisa las páginas que comienzan por 190. "
+        "Si el séptimo dígito es 1, urbrur debe ser U (urbano); si es 2, "
+        "debe ser R (rural). Solo se genera alerta cuando figura la clasificación "
+        "opuesta: 1 con R o 2 con U."
     )
 
     # 6. Actividades

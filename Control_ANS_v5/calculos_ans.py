@@ -1,1178 +1,2528 @@
 """
+
 ------------------------------------------------------------
+
 CÁLCULOS ANS – Proyecto Control_ANS_FENIX
+
 ------------------------------------------------------------
+
 Autor: Héctor + IA (2025)
+
 ------------------------------------------------------------
+
 Descripción:
+
 - Lee el archivo limpio (FENIX_CLEAN.xlsx)
-- Calcula días pactados, fecha límite ANS, estado y métricas.
+
+- Calcula días y estados ELITE, además de plazo y vencimiento contractual EPM.
+
 - Excluye sábados, domingos y festivos.
+
 - Mantiene hora/minuto del inicio.
+
 - Exporta a FENIX_ANS.xlsx con hoja RESUMEN.
+
 ------------------------------------------------------------
+
 """
 
+
+
 import pandas as pd
+
 import numpy as np
+
 from datetime import datetime, timedelta
+
 from pathlib import Path
+
 from openpyxl import load_workbook
+
 from openpyxl.styles import PatternFill
+
 from openpyxl.formatting.rule import FormulaRule
 
 
+
+
+
 # ------------------------------------------------------------
+
 # ⚙️ CONFIGURACIÓN GLOBAL DE ADVERTENCIAS
+
 # ------------------------------------------------------------
+
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
+
 # ------------------------------------------------------------
+
 # CONFIGURACIÓN DE RUTAS PORTABLES
+
 # ------------------------------------------------------------
+
 base_path = Path(__file__).resolve().parent
 
+
+
 ruta_input  = base_path / "data_clean" / "FENIX_CLEAN.xlsx"
+
 ruta_output = base_path / "data_clean" / "FENIX_ANS.xlsx"
 
+
+
 # 👉 ESTA LÍNEA DEBE IR AQUÍ
+
 ruta_repo   = base_path / "data_clean" / "REPOSITORIO_PEDIDOS_CERRADOS.xlsx"
 
 
+
+
+
 # ------------------------------------------------------------
+
 # CONFIGURACIÓN DE CALENDARIO SIN DÍAS FESTIVOS
+
 # ------------------------------------------------------------
+
 WEEKMASK = "1111100"  # lunes a viernes
 
+
+
 FESTIVOS = np.array([
+
     "2025-01-01","2025-01-06","2025-03-24","2025-04-17","2025-04-18",
+
     "2025-05-01","2025-05-26","2025-06-16","2025-06-23","2025-07-07",
+
     "2025-08-07","2025-08-18","2025-10-13","2025-11-03","2025-11-17",
+
     "2025-12-08","2025-12-25",
 
+
+
     "2026-01-01","2026-01-12","2026-03-23","2026-04-02","2026-04-03",
+
     "2026-05-01","2026-05-18","2026-06-08","2026-06-15","2026-06-29",
+
     "2026-07-13",  # ← Nuevo festivo decretado
+
     "2026-07-20",
+
     "2026-08-07","2026-08-17","2026-10-12","2026-11-02",
+
     "2026-11-16","2026-12-08","2026-12-25"
+
 ], dtype="datetime64[D]")
 
+
+
 # ------------------------------------------------------------
+
 # FUNCIÓN: FECHA LÍMITE SEGÚN LÓGICA FÉNIX
+
 # ------------------------------------------------------------
+
 def add_business_days_keep_time(start_dt, n_days):
+
     if pd.isna(start_dt) or n_days <= 0:
+
         return pd.NaT
 
+
+
     date_part = np.datetime64(start_dt.date())
+
     time_part = start_dt.time()
 
+
+
     # Día no hábil → primer hábil siguiente
+
     if not np.is_busday(date_part, weekmask=WEEKMASK, holidays=FESTIVOS):
+
         primer_habil = np.busday_offset(date_part, 0, roll="forward",
+
                                         weekmask=WEEKMASK, holidays=FESTIVOS)
+
         limite = np.busday_offset(primer_habil, n_days - 1, roll="forward",
+
                                   weekmask=WEEKMASK, holidays=FESTIVOS)
+
     else:
+
         # Día hábil → siguiente hábil
+
         siguiente_habil = np.busday_offset(date_part, 1, roll="forward",
+
                                            weekmask=WEEKMASK, holidays=FESTIVOS)
+
         limite = np.busday_offset(siguiente_habil, n_days - 1, roll="forward",
+
                                   weekmask=WEEKMASK, holidays=FESTIVOS)
+
+
 
     return datetime.combine(pd.to_datetime(str(limite)).date(), time_part)
 
+
+
 # ------------------------------------------------------------
+
 # FUNCIÓN: DÍAS HÁBILES ENTRE DOS FECHAS
+
 # ------------------------------------------------------------
+
 def business_days_between(start_dt, end_dt):
+
     if pd.isna(start_dt) or pd.isna(end_dt):
+
         return np.nan
+
     start_date = np.datetime64(start_dt.date() + timedelta(days=1))
+
     end_date = np.datetime64(end_dt.date())
+
     dias = np.busday_count(start_date, end_date, weekmask=WEEKMASK, holidays=FESTIVOS)
+
     if np.is_busday(end_date, weekmask=WEEKMASK, holidays=FESTIVOS) and end_date > start_date:
+
         dias += 1
+
     return int(dias)
 
+
+
 # ------------------------------------------------------------
+
 # CARGA DE DATOS
+
 # ------------------------------------------------------------
+
 df = pd.read_excel(ruta_input)
+
 print(df[df["PEDIDO"].astype(str).str.contains("2275", na=False)])
+
 print(f"📂 Archivo cargado: {ruta_input.name} ({len(df)} registros)")
 
+
+
 # # ============================================================
+
 # # 🧹 LIMPIEZA CRÍTICA DE DUPLICADOS DE ORIGEN (FENIX_CLEAN)
+
 # # ============================================================
+
+
 
 # antes = len(df)
 
+
+
 # # Columnas que definen un evento real
+
 # cols_evento = [
+
 #     "PEDIDO",
+
 #     "ACTIVIDAD",
+
 #     "FECHA_INICIO_ANS",
+
 #     "TIPO_DIRECCION"
+
 # ]
 
+
+
 # # Normalizar texto clave
+
 # for c in ["PEDIDO", "ACTIVIDAD", "TIPO_DIRECCION"]:
+
 #     if c in df.columns:
+
 #         df[c] = df[c].astype(str).str.strip()
 
+
+
 # # Eliminar duplicados técnicos exactos
+
 # df = df.drop_duplicates(subset=cols_evento, keep="first")
+
+
 
 # despues = len(df)
 
+
+
 # print(f"🧹 Duplicados técnicos eliminados desde origen: {antes - despues}")
 
+
+
 # print(
+
 #     df.groupby("PEDIDO")
+
 #       .size()
+
 #       .reset_index(name="conteo")
+
 #       .query("conteo > 1")
+
 #       .head(20)
+
 # )
 
 
+
+
+
 # ------------------------------------------------------------
+
 # LIMPIEZA Y CONVERSIÓN DE FECHAS
+
 # ------------------------------------------------------------
+
 columnas_clave = ["PEDIDO", "FECHA_INICIO_ANS", "TIPO_DIRECCION", "ACTIVIDAD"]
+
+
 
 from pandas.api.types import is_datetime64_any_dtype
 
+
+
 for col in columnas_clave:
+
+
 
     if is_datetime64_any_dtype(df[col]):
 
+
+
         df[col] = df[col].apply(
+
             lambda x: np.nan if pd.isna(x) else x
+
         )
+
+
 
     else:
 
+
+
         df[col] = df[col].apply(
+
+
 
             lambda x: np.nan
 
+
+
             if str(x).strip() == ""
+
+
 
             or str(x).upper() in [
 
+
+
                 "NAN",
+
                 "NONE",
+
                 "NULL"
+
+
 
             ]
 
+
+
             else x
+
+
 
         )
 
+
+
 # Nota: la advertencia "Parsing dates..." es solo informativa y no afecta el flujo.
+
 # Se mantiene 'dayfirst=True' para compatibilidad con formatos DD/MM/YYYY y YYYY/MM/DD.
+
 df["FECHA_INICIO_ANS"] = pd.to_datetime(df["FECHA_INICIO_ANS"], errors="coerce", dayfirst=True)
 
+
+
 # ------------------------------------------------------------
+
 # DÍAS PACTADOS
+
 # ------------------------------------------------------------
+
 # Regla contractual METROPOLITANA SUR.
+
 # Se conserva sin cambios respecto a la versión actual.
+
 DIAS_PACTADOS_MAP = {
+
     "ACREV":  {"URBANO": 4,  "RURAL": 4},
+
     "ALEGN":  {"URBANO": 7,  "RURAL": 10},
+
     "ALEGA":  {"URBANO": 7,  "RURAL": 10},
+
     "ALECA":  {"URBANO": 7,  "RURAL": 10},
+
     "ACAMN":  {"URBANO": 7,  "RURAL": 10},
+
     "AMRTR":  {"URBANO": 9,  "RURAL": 14},
+
     "REEQU":  {"URBANO": 11, "RURAL": 11},
+
     "INPRE":  {"URBANO": 11, "RURAL": 11},
+
     "DIPRE":  {"URBANO": 8,  "RURAL": 11},
+
     "ARTER":  {"URBANO": 5,  "RURAL": 8},
+
     "AEJDO":  {"URBANO": 7,  "RURAL": 12},
+
     "VITEC":  {"URBANO": 2,  "RURAL": 2},
+
     "APLIN":  {"URBANO": 8,  "RURAL": 8},
+
 }
+
+
 
 # Regla contractual SUROESTE + OCCIDENTE.
+
 # Ambas zonas comparten los mismos días pactados.
+
 DIAS_PACTADOS_SO_OCC = {
+
     "ACREV":  {"URBANO": 4,  "RURAL": 4},
+
     "ALEGN":  {"URBANO": 7,  "RURAL": 10},
+
     "ALEGA":  {"URBANO": 7,  "RURAL": 10},
+
     "ALECA":  {"URBANO": 7,  "RURAL": 10},
+
     "ACAMN":  {"URBANO": 6,  "RURAL": 9},
+
     "AMRTR":  {"URBANO": 9,  "RURAL": 14},
+
     "REEQU":  {"URBANO": 11, "RURAL": 11},
+
     "INPRE":  {"URBANO": 13, "RURAL": 13},
+
     "DIPRE":  {"URBANO": 11, "RURAL": 11},
+
     "ARTER":  {"URBANO": 4,  "RURAL": 8},
+
     "AEJDO":  {"URBANO": 8,  "RURAL": 13},
+
     "VITEC":  {"URBANO": 2,  "RURAL": 2},
+
     "APLIN":  {"URBANO": 8,  "RURAL": 8},
+
 }
 
-def dias_pactados(row):
-    act = str(row.get("ACTIVIDAD", "")).strip().upper()
+
+
+# ------------------------------------------------------------
+# PLAZOS CONTRACTUALES EPM — TABLA ENTREGADA POR EL ANALISTA
+# Se aplica a las subzonas del informe. Los plazos ELITE se conservan.
+# ALEMN no tiene regla en la tabla recibida: NO se le asigna otro plazo.
+# ------------------------------------------------------------
+DIAS_PACTADOS_EPM_MAP = {
+    "ACREV": {"URBANO": 5, "RURAL": 5},
+    "ALEGN": {"URBANO": 8, "RURAL": 11},
+    "ALEGA": {"URBANO": 8, "RURAL": 11},
+    "ALECA": {"URBANO": 8, "RURAL": 11},
+    "ACAMN": {"URBANO": 8, "RURAL": 11},
+    "AMRTR": {"URBANO": 10, "RURAL": 15},
+    "REEQU": {"URBANO": 14, "RURAL": 14},
+    "INPRE": {"URBANO": 14, "RURAL": 14},
+    "DIPRE": {"URBANO": 14, "RURAL": 14},
+    "ARTER": {"URBANO": 6, "RURAL": 10},
+    "AEJDO": {"URBANO": 9, "RURAL": 14},
+    "VITEC": {"URBANO": 2, "RURAL": 2},
+    "APLIN": {"URBANO": 9, "RURAL": 9},
+}
+
+
+def calcular_ans_epm(row, fecha_corte):
+    """Devuelve plazo, límite, tiempo restante y estado EPM de una fila.
+
+    Comparación exacta de fecha y hora: vence cuando corte > límite.
+    Se reutilizan el calendario y el conteo de días del cálculo ELITE.
+    Los casos sin fecha o sin regla no se cuentan como vencidos.
+    """
+    actividad = str(row.get("ACTIVIDAD", "")).strip().upper()
     tipo = str(row.get("TIPO_DIRECCION", "")).strip().upper()
+    plazo = DIAS_PACTADOS_EPM_MAP.get(actividad, {}).get(tipo)
+    if plazo is None:
+        return (pd.NA, pd.NaT, "", "SIN REGLA EPM")
+
+    inicio = row["FECHA_INICIO_ANS"]
+    if pd.isna(inicio):
+        return (plazo, pd.NaT, "", "SIN FECHA")
+
+    limite = add_business_days_keep_time(inicio, plazo)
+    if fecha_corte > limite:
+        return (plazo, limite, "VENCIDO", "VENCIDO")
+
+    referencia = fecha_corte.replace(
+        hour=inicio.hour, minute=inicio.minute,
+        second=inicio.second, microsecond=0
+    )
+    restantes = plazo - business_days_between(inicio, referencia)
+    texto = f"{restantes} días {inicio.strftime('%H:%M')}"
+    return (plazo, limite, texto, "DENTRO DEL PLAZO")
+
+
+def dias_pactados(row):
+
+    act = str(row.get("ACTIVIDAD", "")).strip().upper()
+
+    tipo = str(row.get("TIPO_DIRECCION", "")).strip().upper()
+
     subzona = str(row.get("SUBZONA", "")).strip().upper()
 
+
+
     # SUROESTE y OCCIDENTE utilizan su tabla contractual específica.
+
     # Las demás zonas conservan la tabla base vigente.
+
     if subzona in ["SUROESTE", "OCCIDENTE"]:
+
         mapa = DIAS_PACTADOS_SO_OCC
+
     else:
+
         mapa = DIAS_PACTADOS_MAP
 
+
+
     if act in mapa and tipo in mapa[act]:
+
         return mapa[act][tipo]
+
+
 
     return 0
 
+
+
 df["DIAS_PACTADOS"] = df.apply(dias_pactados, axis=1)
 
+
+
 # ------------------------------------------------------------
+
 # FECHA LÍMITE ANS
+
 # ------------------------------------------------------------
+
 df["FECHA_LIMITE_ANS"] = df.apply(
+
     lambda r: add_business_days_keep_time(r["FECHA_INICIO_ANS"], r["DIAS_PACTADOS"]),
+
     axis=1
+
 )
 
+
+
 # ------------------------------------------------------------
+
 # DÍAS TRANSCURRIDOS
+
 # ------------------------------------------------------------
+
 hoy = datetime.now()
 
+
+
 def ajustar_hora(fecha_inicio):
+
     if pd.isna(fecha_inicio):
+
         return hoy
+
     return hoy.replace(hour=fecha_inicio.hour, minute=fecha_inicio.minute, second=fecha_inicio.second, microsecond=0)
 
+
+
 def calcular_dias_transcurridos(row):
+
     fecha_ini = row["FECHA_INICIO_ANS"]
+
     if pd.isna(fecha_ini):
+
         return ""
+
     hoy_ref = ajustar_hora(fecha_ini)
+
     dias_habiles = business_days_between(fecha_ini, hoy_ref)
+
     hora_inicio = fecha_ini.strftime("%H:%M")
+
     return f"{dias_habiles} días {hora_inicio}"
+
+
 
 df["DIAS_TRANSCURRIDOS"] = df.apply(calcular_dias_transcurridos, axis=1)
 
+
+
 # ------------------------------------------------------------
+
 # DÍAS RESTANTES (ajuste exacto incluyendo fin de semana y hora)
+
 # ------------------------------------------------------------
+
 def calcular_dias_restantes(row):
+
     fecha_ini = row["FECHA_INICIO_ANS"]
+
     fecha_lim = row["FECHA_LIMITE_ANS"]
+
     dias_pactados = row["DIAS_PACTADOS"]
 
+
+
     if pd.isna(fecha_ini) or pd.isna(fecha_lim) or dias_pactados <= 0:
+
         return ""
 
-    hoy = datetime.now()
+
 
     if hoy > fecha_lim:
+
         return "VENCIDO"
 
+
+
     hoy_ref = ajustar_hora(fecha_ini)
+
     dias_transcurridos = business_days_between(fecha_ini, hoy_ref)
+
     dias_restantes = dias_pactados - dias_transcurridos
+
+
 
     return f"{dias_restantes} días {fecha_ini.strftime('%H:%M')}"
 
+
+
 df["DIAS_RESTANTES"] = df.apply(calcular_dias_restantes, axis=1)
 
+
+
 # ------------------------------------------------------------
+
 # ESTADO
+
 # ------------------------------------------------------------
+
 def calcular_estado(row):
+
     valor = row["DIAS_RESTANTES"]
+
     if valor == "VENCIDO":
+
         return "VENCIDO"
+
     if isinstance(valor, str) and "días" in valor:
+
         try:
+
             dias = int(valor.split()[0])
+
             if dias == 0:
+
                 return "ALERTA_0 Días"  # especial 0 días
+
             elif dias <= 2:
+
                 return "ALERTA"
+
             return "A TIEMPO"
+
         except:
+
             return "SIN FECHA"
+
     return "SIN FECHA"
+
+
 
 df["ESTADO"] = df.apply(calcular_estado, axis=1)
 
+
+
 # ------------------------------------------------------------
+
 # VERIFICAR SI EL ARCHIVO FENIX_ANS ESTÁ ABIERTO
+
 # ------------------------------------------------------------
+
 import os
+
 import tkinter as tk
+
 from tkinter import messagebox
 
+
+
 def verificar_archivo_abierto(ruta):
+
     """Verifica si el archivo Excel está en uso por Excel u otro proceso."""
+
     if os.path.exists(ruta):
+
         try:
+
             with open(ruta, "a"):
+
                 pass  # Si puede abrirse, no está bloqueado
+
         except PermissionError:
+
             root = tk.Tk()
+
             root.withdraw()
+
             messagebox.showerror(
+
                 "🚫 Archivo bloqueado",
+
                 "El Informe' está abierto en Excel.\n\n"
+
                 "🔒 Cierra el archivo y vuelve a ejecutar el proceso."
+
             )
+
             print("⛔ Proceso detenido: el archivo está abierto.")
+
             exit()
+
 # ------------------------------------------------------------
+
 # 🔗 CRUCE CON GOOGLE SHEETS – FORMULARIO CONTROL ANS (v8.1 blindado)
+
 # ------------------------------------------------------------
+
 import gspread
+
 from google.oauth2.service_account import Credentials
+
 import re
 
+
+
 def limpiar_pedido(x):
+
     """
+
     Limpia cualquier valor de PEDIDO:
+
     - Convierte a texto
+
     - Elimina espacios invisibles
+
     - Quita ceros adelante
+
     - Elimina .0 si viene como número flotante
+
     """
+
     if pd.isna(x):
+
         return ""
+
     x = str(x).strip()
 
+
+
     # Quitar caracteres invisibles
+
     x = re.sub(r"[\u200B-\u200D\uFEFF\u00A0]", "", x)
 
+
+
     # Quitar .0 de Excel
+
     if x.endswith(".0"):
+
         x = x.replace(".0", "")
 
+
+
     # Quitar ceros a la izquierda
+
     x = x.lstrip("0")
+
+
 
     return x
 
 
+
+
+
 # ============================================================
+
 # 🚫 EXCLUSIÓN AUTOMÁTICA - CONTROL PÉRDIDAS EPM
+
 # ============================================================
+
 # Regla de negocio:
+
 # Si al menos una fila de un PEDIDO cumple simultáneamente:
+
 #   - EQUIPO = REVPERD
+
 #   - PRODUCTO_ID = ENEPRE, ENENOR o ENERES
+
 #
+
 # se excluye TODO el PEDIDO del informe ANS, incluyendo cualquier
+
 # fila duplicada o adicional asociada al mismo número de pedido.
+
 #
+
 # La detección de columnas se hace sin depender de mayúsculas/minúsculas
+
 # ni espacios en los encabezados del archivo FENIX_CLEAN.xlsx.
+
 # ============================================================
+
+
 
 # Normalizar PEDIDO antes de identificar pedidos a excluir.
+
 df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
 
+
+
 # Localizar columnas reales de forma robusta.
+
 columnas_normalizadas = {
+
     str(col).strip().upper(): col
+
     for col in df.columns
+
 }
 
+
+
 col_equipo = columnas_normalizadas.get("EQUIPO")
+
 col_producto = columnas_normalizadas.get("PRODUCTO_ID")
+
+
 
 if col_equipo is not None and col_producto is not None:
 
+
+
     equipo_norm = (
+
         df[col_equipo]
+
         .fillna("")
+
         .astype(str)
+
         .str.strip()
+
         .str.upper()
+
     )
+
+
 
     producto_norm = (
+
         df[col_producto]
+
         .fillna("")
+
         .astype(str)
+
         .str.strip()
+
         .str.upper()
+
     )
+
+
 
     mask_control_perdidas = (
+
         (equipo_norm == "REVPERD")
+
         &
+
         producto_norm.isin(["ENEPRE", "ENENOR", "ENERES"])
+
     )
+
+
 
     # Identificar PEDIDOS completos que cumplen la regla.
+
     pedidos_control_perdidas = set(
+
         df.loc[
+
             mask_control_perdidas,
+
             "PEDIDO"
+
         ]
+
         .dropna()
+
         .astype(str)
+
     )
 
+
+
     # Evitar valores vacíos dentro del conjunto.
+
     pedidos_control_perdidas.discard("")
 
+
+
     registros_antes = len(df)
+
     cantidad_pedidos = len(pedidos_control_perdidas)
 
+
+
     # Eliminar TODAS las filas pertenecientes a esos pedidos.
+
     df = df[
+
         ~df["PEDIDO"].isin(pedidos_control_perdidas)
+
     ].copy()
+
+
 
     registros_eliminados = registros_antes - len(df)
 
+
+
     print(
+
         f"🚫 CONTROL PÉRDIDAS EPM aplicado: "
+
         f"{cantidad_pedidos} pedido(s) excluido(s) | "
+
         f"{registros_eliminados} registro(s) eliminado(s)."
+
     )
+
+
 
 else:
+
     faltantes_control_perdidas = []
 
+
+
     if col_equipo is None:
+
         faltantes_control_perdidas.append("EQUIPO")
 
+
+
     if col_producto is None:
+
         faltantes_control_perdidas.append("PRODUCTO_ID")
 
+
+
     print(
+
         "⚠️ No se aplicó la exclusión automática CONTROL PÉRDIDAS EPM. "
+
         f"Columnas faltantes: {faltantes_control_perdidas}"
+
     )
 
 
+
+
+
 # ============================================================
+
 # 🚫 CONTROL DE EXCLUSIONES DEL INFORME ANS
+
 # ============================================================
+
 # Regla de negocio:
+
 # Si un PEDIDO presente en la extracción también existe en
+
 # data_master/CONTROL_EXCLUSIONES.xlsx, se elimina del dataframe
+
 # y no se incluye en el archivo final FENIX_ANS.xlsx.
+
 #
+
 # El archivo de control debe contener, como mínimo, la columna:
+
 #   PEDIDO
+
 #
+
 # Se recomienda conservar adicionalmente una columna MOTIVO para
+
 # trazabilidad, aunque no es obligatoria para aplicar el filtro.
+
 # ============================================================
+
+
 
 ruta_exclusiones = base_path / "data_master" / "CONTROL_EXCLUSIONES.xlsx"
 
+
+
 if ruta_exclusiones.exists():
+
     try:
+
         df_exclusiones = pd.read_excel(ruta_exclusiones, dtype=str)
 
+
+
         # Normalizar encabezados del archivo de control
+
         df_exclusiones.columns = (
+
             df_exclusiones.columns
+
             .astype(str)
+
             .str.strip()
+
             .str.upper()
+
         )
 
+
+
         if "PEDIDO" not in df_exclusiones.columns:
+
             print(
+
                 "⚠️ CONTROL_EXCLUSIONES.xlsx no contiene la columna PEDIDO. "
+
                 "No se aplicaron exclusiones."
-            )
-        else:
-            # Normalizar PEDIDO en ambas fuentes con la misma regla
-            df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
-            df_exclusiones["PEDIDO"] = (
-                df_exclusiones["PEDIDO"]
-                .apply(limpiar_pedido)
+
             )
 
-            # Ignorar registros vacíos del archivo de control
-            pedidos_excluir = set(
-                df_exclusiones.loc[
-                    df_exclusiones["PEDIDO"] != "",
-                    "PEDIDO"
-                ]
+        else:
+
+            # Normalizar PEDIDO en ambas fuentes con la misma regla
+
+            df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
+
+            df_exclusiones["PEDIDO"] = (
+
+                df_exclusiones["PEDIDO"]
+
+                .apply(limpiar_pedido)
+
             )
+
+
+
+            # Ignorar registros vacíos del archivo de control
+
+            pedidos_excluir = set(
+
+                df_exclusiones.loc[
+
+                    df_exclusiones["PEDIDO"] != "",
+
+                    "PEDIDO"
+
+                ]
+
+            )
+
+
 
             cantidad_antes = len(df)
 
+
+
             # Eliminar todas las filas cuyo PEDIDO esté en el control
+
             df = df[
+
                 ~df["PEDIDO"].isin(pedidos_excluir)
+
             ].copy()
+
+
 
             total_excluidos = cantidad_antes - len(df)
 
+
+
             print(
+
                 f"🚫 CONTROL_EXCLUSIONES aplicado: "
+
                 f"{total_excluidos} registro(s) excluido(s) de FENIX_ANS."
+
             )
 
+
+
     except Exception as e:
+
         print(
+
             f"⚠️ No fue posible aplicar CONTROL_EXCLUSIONES.xlsx: {e}. "
+
             "El proceso continuará sin exclusiones."
+
         )
+
 else:
+
     print(
+
         "ℹ️ No existe data_master/CONTROL_EXCLUSIONES.xlsx. "
+
         "El proceso continuará sin exclusiones."
+
     )
 
 
+
+
+
 try:
+
     cred_path = base_path / "control-ans-elite-f4ea102db569.json"  # <--- CORRECTO
+
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+
     creds = Credentials.from_service_account_file(cred_path, scopes=scopes)
+
     client = gspread.authorize(creds)
 
 
+
+
+
     SHEET_ID = "1bPLGVVz50k6PlNp382isJrqtW_3IsrrhGW0UUlMf-bM"
+
     sheet = client.open_by_key(SHEET_ID)
 
+
+
     hoja = None
+
     for ws in sheet.worksheets():
+
         if "RESP" in ws.title.upper() or "FORM" in ws.title.upper():
+
             hoja = ws
+
             break
 
+
+
     if hoja is None:
+
         raise Exception("No se detectó pestaña válida del formulario.")
+
+
 
     data = hoja.get_all_records()
 
+
+
     if not data:
+
         print("⚠️ Formulario vacío — se dejan columnas en SIN DATO.")
+
         df["REPORTE_TECNICO"] = "SIN DATO"
+
         df["TECNICO_EJECUTA"] = "SIN DATO"
+
     else:
+
         df_form = pd.DataFrame(data)
+
         df_form.rename(columns=lambda c: c.strip().upper(), inplace=True)
 
+
+
         # ============================================================
+
         # 🔒 DEDUPLICAR FORMULARIO POR PEDIDO (CRÍTICO)
+
         # ============================================================
+
         # Renombrar columnas
+
         renames = {
+
             "NÚMERO DEL PEDIDO": "PEDIDO",
+
             "MARCA TEMPORAL": "MARCA_TEMPORAL",
+
             "ESTADO DEL PEDIDO": "REPORTE_TECNICO",
+
             "NOMBRE DEL TÉCNICO": "TECNICO_EJECUTA",
+
             "OBSERVACIÓN": "OBSERVACION"
+
         }
+
         df_form.rename(columns=renames, inplace=True)
+
+
 
         df_form["PEDIDO"] = df_form["PEDIDO"].astype(str).str.strip()
 
+
+
         # Orden opcional: si tienes timestamp del formulario, usarlo aquí
+
         # df_form = df_form.sort_values("FECHA_ENVIO")
 
+
+
         df_form = (
+
             df_form
+
             .drop_duplicates(subset=["PEDIDO"], keep="last")
+
         )
+
+
 
         print(f"🧹 Formulario deduplicado: {len(df_form)} pedidos únicos")
 
+
+
         # Normalizar pedidos
+
         df["PEDIDO"] = df["PEDIDO"].apply(limpiar_pedido)
+
         df_form["PEDIDO"] = df_form["PEDIDO"].apply(limpiar_pedido)
 
+
+
         # Limpiar textos del formulario
+
         if "REPORTE_TECNICO" in df_form.columns:
+
             df_form["REPORTE_TECNICO"] = df_form["REPORTE_TECNICO"].astype(str).str.upper().str.strip()
 
+
+
         if "TECNICO_EJECUTA" in df_form.columns:
+
             df_form["TECNICO_EJECUTA"] = df_form["TECNICO_EJECUTA"].astype(str).str.upper().str.strip()
 
+
+
         # MERGE SEGURO
+
         columnas = ["PEDIDO", "MARCA_TEMPORAL", "REPORTE_TECNICO", "TECNICO_EJECUTA", "OBSERVACION"]
+
         columnas = [c for c in columnas if c in df_form.columns]
+
+
 
         df = df.merge(df_form[columnas], on="PEDIDO", how="left")
 
+
+
         print(
+
             df.groupby("PEDIDO")
+
             .size()
+
             .reset_index(name="conteo")
+
             .query("conteo > 1")
+
             .head(10)
+
         )
+
         # Rellenar vacíos
+
         df["MARCA_TEMPORAL"] = df["MARCA_TEMPORAL"].fillna("SIN DATO")
+
         df["REPORTE_TECNICO"] = df["REPORTE_TECNICO"].fillna("SIN DATO")
+
         df["TECNICO_EJECUTA"] = df["TECNICO_EJECUTA"].fillna("SIN DATO")
+
         df["OBSERVACION"] = df["OBSERVACION"].fillna("SIN DATO")
 
+
+
         # ============================================================
+
         # 🧹 LIMPIEZA INTELIGENTE DE DUPLICADOS "SIN DATO"
+
         # ============================================================
+
+
 
         # Identificar filas totalmente vacías funcionalmente
+
         mask_sin_dato = (
+
             (df["REPORTE_TECNICO"] == "SIN DATO") &
+
             (df["TECNICO_EJECUTA"] == "SIN DATO") &
+
             (df["OBSERVACION"] == "SIN DATO")
+
         )
 
+
+
         # Separar
+
         df_con_info = df[~mask_sin_dato].copy()
+
         df_sin_info = df[mask_sin_dato].copy()
 
+
+
         # Colapsar SOLO los SIN DATO por PEDIDO
+
         df_sin_info = df_sin_info.drop_duplicates(subset=["PEDIDO"], keep="first")
 
+
+
         # Reconstruir dataframe final
+
         df = pd.concat([df_con_info, df_sin_info], ignore_index=True)
+
+
 
         print("🧹 Duplicados SIN DATO colapsados correctamente")
 
+
+
         print("🔗 Cruce con Google Sheets finalizado correctamente ✔")
 
+
+
 except Exception as e:
+
     print(f"⚠️ Error en cruce con formulario Google Sheets: {e}")
+
     df["REPORTE_TECNICO"] = df.get("REPORTE_TECNICO", "SIN DATO")
+
     df["TECNICO_EJECUTA"] = df.get("TECNICO_EJECUTA", "SIN DATO")
 
 
+
+
+
 # ============================================================
+
 # 🩹 CREAR COLUMNAS SI NO EXISTEN (solución definitiva)
+
 # ============================================================
+
 for columna in ["MARCA_TEMPORAL", "REPORTE_TECNICO", "TECNICO_EJECUTA", "ESTADO_FENIX", "OBSERVACION"]:
+
     if columna not in df.columns:
+
         df[columna] = "SIN DATO"
+
         print(f"🆕 Columna agregada automáticamente: {columna}")
 
+
+
 # 🔧 Crear columnas necesarias si Google Sheets falla
+
 if "REPORTE_TECNICO" not in df.columns:
+
     df["REPORTE_TECNICO"] = "SIN DATO"
 
+
+
 if "TECNICO_EJECUTA" not in df.columns:
+
     df["TECNICO_EJECUTA"] = "SIN DATO"
 
+
+
 # # # ------------------------------------------------------------
+
 # # # 🧭 NUEVA COLUMNA: ESTADO_FENIX (según cruce FENIX + formulario)
+
 # # # ------------------------------------------------------------
+
 """
+
 🔒 BLOQUE DESACTIVADO (v4.1)
+
 Esta sección se comenta nuevamente después de generar el informe ANS.
+
 El cálculo real de ESTADO_FENIX se realizará mediante el script:
+
 ➡️ cruce_digitacion_fenix.py
+
 que usa Digitacion Fenix.txt como fuente oficial.
+
 """
+
 # from datetime import datetime
+
 # import pandas as pd
+
+
 
 # hoy = datetime.now()
 
+
+
 # def calcular_estado_fenix(row):
+
 #     form = str(row.get("REPORTE_TECNICO", "")).strip().upper()
+
 #     estado_fenix_origen = str(row.get("ESTADO_FENIX_ORIGEN", "")).strip().upper()
+
 #     fecha_lim = pd.to_datetime(row.get("FECHA_LIMITE_ANS", ""), errors="coerce")
 
+
+
 #     if pd.isna(fecha_lim):
+
 #         return "SIN FECHA"
+
+
 
 #     dias_rest = (fecha_lim.date() - hoy.date()).days
 
+
+
 #     # ✅ CERRADO solo si el técnico ejecutó en campo y FENIX lo confirma cerrado
+
 #     if form == "EJECUTADO EN CAMPO" and estado_fenix_origen == "CERRADO":
+
 #         return "CERRADO"
 
+
+
 #     # 🟡 Si el técnico ejecutó pero FENIX aún no está cerrado
+
 #     if form == "EJECUTADO EN CAMPO" and estado_fenix_origen != "CERRADO":
+
 #         return "PENDIENTE VALIDACIÓN"
 
+
+
 #     # 🔴 Semáforo ANS (según fecha límite)
+
 #     if dias_rest < 0:
+
 #         return "VENCIDO"
+
 #     elif dias_rest == 0:
+
 #         return "CRÍTICO"
+
 #     elif dias_rest < 2:
+
 #         return "APUNTO DE VENCER"
+
 #     else:
+
 #         return "ABIERTO"
 
+
+
 # df["ESTADO_FENIX"] = df.apply(calcular_estado_fenix, axis=1)
+
 # print("🧭 Columna ESTADO_FENIX generada correctamente con validación cruzada.")
 
+
+
 # ------------------------------------------------------------
+
 # 📦 MOVER PEDIDOS CUMPLIDOS A REPOSITORIO HISTÓRICO (VERSIÓN FINAL)
+
 # Condición:
+
 #   - REPORTE_TECNICO = LEGALIZADO
+
 #   - ESTADO_FENIX   = CUMPLIDO
+
 # El repositorio conserva TODAS las columnas de FENIX_ANS
+
 # ------------------------------------------------------------
+
+
 
 # Normalizar columnas clave
+
 df["PEDIDO"] = df["PEDIDO"].astype(str).str.strip()
+
 df["REPORTE_TECNICO"] = df["REPORTE_TECNICO"].astype(str).str.upper().str.strip()
+
 df["ESTADO_FENIX"] = df["ESTADO_FENIX"].astype(str).str.upper().str.strip()
 
+
+
 # Filtrar pedidos que cumplen ambas condiciones
+
 cerrados = df[
+
     (df["REPORTE_TECNICO"] == "LEGALIZADO") &
+
     (df["ESTADO_FENIX"] == "CUMPLIDO")
+
 ].copy()
 
+
+
 if cerrados.empty:
+
     print("ℹ️ No se encontraron pedidos LEGALIZADOS y CUMPLIDOS para mover.")
+
 else:
+
     print(f"📦 {len(cerrados)} pedidos serán movidos al repositorio histórico.")
 
+
+
     # Si el repositorio existe, cargarlo
+
     if ruta_repo.exists():
+
         repo = pd.read_excel(ruta_repo, dtype=str)
 
+
+
         # Asegurar que tenga TODAS las columnas actuales
+
         for col in df.columns:
+
             if col not in repo.columns:
+
                 repo[col] = ""
 
+
+
         # Alinear exactamente el orden de columnas
+
         repo = repo[df.columns]
 
+
+
         # Concatenar
+
         repo = pd.concat([repo, cerrados], ignore_index=True)
 
+
+
         # Eliminar duplicados por PEDIDO (conservar el más reciente)
+
         repo["PEDIDO"] = repo["PEDIDO"].astype(str).str.strip()
+
         repo = repo.drop_duplicates(subset=["PEDIDO"], keep="last")
 
+
+
     else:
+
         # Crear repositorio nuevo con estructura completa
+
         repo = cerrados.copy()
 
+
+
     # Guardar repositorio
+
     repo.to_excel(ruta_repo, index=False)
+
     print("🗂️ Repositorio histórico actualizado correctamente.")
 
+
+
     # Eliminar pedidos movidos del archivo principal
+
     df = df[~df["PEDIDO"].isin(cerrados["PEDIDO"])].copy()
+
     print("🧹 Pedidos eliminados de FENIX_ANS tras ser archivados.")
 
+
+
 # ------------------------------------------------------------
+
 # 🔍 CRUCE PARA INSERTAR COORDENADAS Y ZONAS (Z – AC) – CONSOLIDADO
+
 # ------------------------------------------------------------
+
+
 
 archivos_pend = sorted(
+
     (base_path / "data_raw").glob("pendientes_*.csv"),
+
     key=lambda x: x.stat().st_mtime
+
 )
 
+
+
 if not archivos_pend:
+
     print("⚠️ No se encontró ningún archivo pendientes_* para cargar coordenadas.")
+
 else:
+
     print("📂 Archivos de pendientes usados para coordenadas:")
+
     dfs_pen = []
 
+
+
     for archivo in archivos_pend:
+
         print(f"   - {archivo.name}")
+
         df_tmp = pd.read_csv(archivo, dtype=str, encoding="latin-1")
+
         df_tmp.columns = df_tmp.columns.str.strip().str.upper()
+
         dfs_pen.append(df_tmp)
 
+
+
     # Consolidar TODOS los pendientes
+
     df_pen = pd.concat(dfs_pen, ignore_index=True)
 
+
+
     # Columnas requeridas
+
     columnas_req = ["PEDIDO", "COORDENADAX", "COORDENADAY", "AREA_OPERATIVA", "SUBZONA", "SUBPED"]
+
     faltantes = [c for c in columnas_req if c not in df_pen.columns]
 
+
+
     if faltantes:
+
         print(f"⚠️ Columnas faltantes en pendientes: {faltantes}")
+
     else:
+
         # Normalizar pedido
+
         df["PEDIDO"] = df["PEDIDO"].astype(str).str.strip()
+
         df_pen["PEDIDO"] = df_pen["PEDIDO"].astype(str).str.strip()
 
+
+
         # DataFrame auxiliar solo con lo necesario
+
         df_merge = df_pen[columnas_req].copy()
 
+
+
         # Merge seguro
+
         df = df.merge(df_merge, on="PEDIDO", how="left")
 
+
+
         # ------------------------------------------------------------
+
         # 📐 REUBICAR COLUMNA CONCEPTO DESPUÉS DE COORDENADAY
+
         # Este bloque se evaluó únicamente con fines de orden visual.
+
         # No es necesario para la lógica ANS ni para los cálculos.
+
         # El orden final de columnas es gestionado por Excel / tabla estructurada.
+
         # Se deja comentado por claridad y trazabilidad del diseño.
+
         # ------------------------------------------------------------
+
         # cols = list(df.columns)
 
+
+
         # if "COORDENADAY" in cols and "Concepto" in cols:
+
         #     idx = cols.index("COORDENADAY") + 1
+
         #     cols.insert(idx, cols.pop(cols.index("CONCEPTO")))
+
         #     df = df[cols]
 
 
+
+
+
         # ------------------------------------------------------------
+
         # 🎯 FILTRO DEFINITIVO DE SUBZONAS VÁLIDAS ANS
+
         # ------------------------------------------------------------
+
         # ⚠️ IMPORTANTE:
+
         # Si FÉNIX agrega nuevas zonas/subzonas,
+
         # deben incluirse explícitamente en esta lista.
+
         # El mapa y Excel se actualizan automáticamente.
+
         subzonas_validas = [
+
             "METROPOLITANA SUR",
+
             "OCCIDENTE",
+
             "SUROESTE",
+
             "NORDESTE",
+
             "ORIENTE"
+
         ]
 
+
+
         # Normalizar texto
+
         df["SUBZONA"] = (
+
             df["SUBZONA"]
+
             .astype(str)
+
             .str.upper()
+
             .str.strip()
+
         )
+
+
 
         # Aplicar filtro
+
         df = df[df["SUBZONA"].isin(subzonas_validas)]
 
+
+
         # ------------------------------------------------------------
+
         # 🏙️ AJUSTE TERRITORIAL TIPO_DIRECCION
+
         # ------------------------------------------------------------
+
         # Regla de negocio:
+
         # Para SUBZONA SUROESTE y OCCIDENTE,METROPOLITANA SUR
+
         # instalaciones que inician con "190" y cuyo 7.º dígito es "1"
+
         # se consideran URBANAS según criterio operativo (2025)
 
+
+
         mask_urbano_especial = (
+
             df["SUBZONA"].isin(["SUROESTE", "OCCIDENTE","METROPOLITANA SUR","ORIENTE","NORDESTE"]) &
+
             df["INSTALACION"].astype(str).str.startswith("190") &
+
             df["INSTALACION"].astype(str).str.len().ge(7) &
+
             (df["INSTALACION"].astype(str).str[6] == "1")
+
         )
+
+
 
         df.loc[mask_urbano_especial, "TIPO_DIRECCION"] = "URBANO"
-        
-        
+
+
+
+
+
         # 🔁 RECÁLCULO NECESARIO TRAS AJUSTE TERRITORIAL
+
         df["DIAS_PACTADOS"] = df.apply(dias_pactados, axis=1)
 
+
+
         df["FECHA_LIMITE_ANS"] = df.apply(
+
             lambda r: add_business_days_keep_time(
+
                 r["FECHA_INICIO_ANS"], r["DIAS_PACTADOS"]
+
             ),
+
             axis=1
+
         )
+
         df["DIAS_TRANSCURRIDOS"] = df.apply(calcular_dias_transcurridos, axis=1)
+
+
 
         df["DIAS_RESTANTES"] = df.apply(calcular_dias_restantes, axis=1)
 
+
+
         df["ESTADO"] = df.apply(calcular_estado, axis=1)
 
+
+
         print("📍 Subzonas finales incluidas en FENIX_ANS:")
+
         print(df["SUBZONA"].value_counts())
 
 
+
+
+
         # Convertir coordenadas a numérico
+
         df["COORDENADAX"] = pd.to_numeric(df["COORDENADAX"], errors="coerce")
+
         df["COORDENADAY"] = pd.to_numeric(df["COORDENADAY"], errors="coerce")
 
+
+
         print("📍 Coordenadas, zonas y subzonas consolidadas correctamente desde TODOS los CSV.")
+
 # ============================================================
+
 # 🔒 COLAPSO DEFINITIVO DE DUPLICADOS
+
 # REGLA DE NEGOCIO: 1 PEDIDO = 1 FILA
+
 # ============================================================
+
+
 
 print("🔒 Colapsando pedidos duplicados (regla negocio: 1 pedido = 1 fila)")
 
+
+
 # Prioridad:
+
 # 1. Pedidos con información (LEGALIZADO / EJECUTADO / con observación)
+
 # 2. Pedidos SIN DATO quedan al final
+
 df = (
+
     df
+
     .sort_values(
+
         by=["PEDIDO", "REPORTE_TECNICO", "OBSERVACION"],
+
         ascending=[True, False, False]
+
     )
+
     .drop_duplicates(subset=["PEDIDO"], keep="first")
+
     .reset_index(drop=True)
+
 )
+
+
 
 print("✅ Duplicados eliminados definitivamente por PEDIDO")
 
+
+
 # ------------------------------------------------------------
+
 # EXPORTAR ARCHIVO
+
 # ------------------------------------------------------------
+
 verificar_archivo_abierto(ruta_output)  # 👈 ESTA LÍNEA ES CLAVE
+
 # ------------------------------------------------------------
+# CÁLCULO FINAL EPM Y KPI — DESPUÉS DE AJUSTES Y DEDUPLICACIÓN
+# Se agregan al final para conservar las posiciones históricas.
+# ------------------------------------------------------------
+columnas_epm = [
+    "DIAS_PACTADOS_EPM", "FECHA_LIMITE_EPM",
+    "DIAS_RESTANTES_EPM", "ESTADO_EPM"
+]
+resultados_epm = pd.DataFrame(
+    [calcular_ans_epm(fila, hoy) for _, fila in df.iterrows()],
+    columns=columnas_epm, index=df.index
+)
+for columna in columnas_epm:
+    df[columna] = resultados_epm[columna]
+df["DIAS_PACTADOS_EPM"] = df["DIAS_PACTADOS_EPM"].astype("Int64")
+
+# Indicadores numéricos para SUMA en tablas dinámicas y filtros del dashboard.
+# Son dos mediciones del mismo pedido: NO se suman entre sí.
+df["VENCIDO_ELITE"] = df["ESTADO"].eq("VENCIDO").astype(int)
+df["VENCIDO_EPM"] = df["ESTADO_EPM"].eq("VENCIDO").astype(int)
+
+print(f"📊 VENCIDOS ELITE: {int(df['VENCIDO_ELITE'].sum())}")
+print(f"📊 VENCIDOS EPM: {int(df['VENCIDO_EPM'].sum())}")
+print(f"⚠️ SIN REGLA EPM: {int(df['ESTADO_EPM'].eq('SIN REGLA EPM').sum())}")
+
+
+# ------------------------------------------------------------
+
 # 🔧 NORMALIZAR FECHAS PARA EVITAR DESFASES EN POWER BI
+
 # ------------------------------------------------------------
+
 # Se exportan como texto plano ISO (no tipo datetime)
+
 # Así Power BI las lee exactamente igual sin conversión de zona ni AM/PM
 
+
+
 df["FECHA_INICIO_ANS"] = df["FECHA_INICIO_ANS"].apply(
+
     lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if pd.notnull(x) else ""
+
 )
+
 df["FECHA_LIMITE_ANS"] = df["FECHA_LIMITE_ANS"].apply(
+
+    lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if pd.notnull(x) else ""
+
+)
+
+
+
+# Fecha EPM con el mismo formato ISO que la fecha límite ELITE.
+df["FECHA_LIMITE_EPM"] = df["FECHA_LIMITE_EPM"].apply(
     lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if pd.notnull(x) else ""
 )
 
+
 # ------------------------------------------------------------
+
 # 🔀 ORDEN VISUAL FINAL: MARCA_TEMPORAL antes de REPORTE_TECNICO
+
 # ------------------------------------------------------------
+
 cols = list(df.columns)
 
+
+
 if "MARCA_TEMPORAL" in cols and "REPORTE_TECNICO" in cols:
+
     cols.remove("MARCA_TEMPORAL")
+
     idx = cols.index("REPORTE_TECNICO")
+
     cols.insert(idx, "MARCA_TEMPORAL")
+
     df = df[cols]
 
+
+
 # ------------------------------------------------------------
+
 # 🧹 QUITAR COLUMNAS DE USO INTERNO DEL ARCHIVO FINAL
+
 # ------------------------------------------------------------
+
 # EQUIPO se conserva en FENIX_CLEAN para aplicar reglas de negocio,
+
 # pero no se exporta a FENIX_ANS para mantener su estructura histórica.
+
 df = df.drop(
+
     columns=[
+
         "ESTADO_FENIX",
+
         "EQUIPO",
+
     ],
+
     errors="ignore"
+
 )
 
+
+
+# Conservar todas las columnas previas en su orden y anexar las seis nuevas.
+columnas_nuevas = columnas_epm + ["VENCIDO_ELITE", "VENCIDO_EPM"]
+df = df[[c for c in df.columns if c not in columnas_nuevas] + columnas_nuevas]
+
 ruta_output.parent.mkdir(exist_ok=True)
+
 with pd.ExcelWriter(ruta_output, engine="openpyxl") as writer:
+
     df.to_excel(writer, index=False, sheet_name="FENIX_ANS")
+
     resumen = df["ESTADO"].value_counts().reset_index()
+
     resumen.columns = ["ESTADO", "CANTIDAD"]
+
     resumen.to_excel(writer, index=False, sheet_name="RESUMEN")
 
+    resumen_epm = df["ESTADO_EPM"].value_counts().reset_index()
+    resumen_epm.columns = ["ESTADO_EPM", "CANTIDAD"]
+    resumen_epm.to_excel(writer, index=False, sheet_name="RESUMEN_EPM")
+
+    solo_elite = (df["VENCIDO_ELITE"].eq(1) & df["ESTADO_EPM"].eq("DENTRO DEL PLAZO"))
+    kpis = pd.DataFrame([
+        ["TOTAL_PEDIDOS", len(df)],
+        ["VENCIDO_ELITE", int(df["VENCIDO_ELITE"].sum())],
+        ["VENCIDO_EPM", int(df["VENCIDO_EPM"].sum())],
+        ["VENCIDO_ELITE_DENTRO_PLAZO_EPM", int(solo_elite.sum())],
+        ["SIN_FECHA_EPM", int(df["ESTADO_EPM"].eq("SIN FECHA").sum())],
+        ["SIN_REGLA_EPM", int(df["ESTADO_EPM"].eq("SIN REGLA EPM").sum())],
+    ], columns=["INDICADOR", "CANTIDAD"])
+    kpis.to_excel(writer, index=False, sheet_name="KPI_VENCIMIENTOS")
+
+
+
+
 print("✅ Cálculos ANS completados correctamente.")
+
 print(f"📁 Archivo exportado: {ruta_output}")
 
 
+
+
+
 # ============================================================
+
 # 🔒 FORMATO FINAL CONSOLIDADO – UN SOLO load_workbook / save
+
 # ============================================================
+
+
 
 from openpyxl import load_workbook
+
 from openpyxl.styles import PatternFill, Font, Alignment
+
 from openpyxl.formatting.rule import FormulaRule
+
 from openpyxl.worksheet.table import Table, TableStyleInfo
+
 from datetime import datetime
 
+
+
 wb = load_workbook(ruta_output)
+
 ws = wb["FENIX_ANS"]
 
+
+
 ultima_fila = ws.max_row
+
 ultima_col = ws.max_column
+
 ultima_col_letra = ws.cell(row=1, column=ultima_col).column_letter
 
 
+
+
+
 # ------------------------------------------------------------
+
 # 🔧 FUNCIÓN SEGURA: OBTENER LETRA DE COLUMNA POR NOMBRE
+
 # ------------------------------------------------------------
+
 def obtener_columna_por_nombre(ws, nombre_col):
+
     for celda in ws[1]:
+
         v = "" if celda.value is None else str(celda.value)
+
         if v.strip().upper() == nombre_col.upper():
+
             return celda.column_letter
+
     raise ValueError(f"Columna '{nombre_col}' no encontrada en Excel")
 
+
+
 # ------------------------------------------------------------
+
 # 🎯 OBTENER COLUMNAS DINÁMICAS (CRÍTICO)
+
 # ------------------------------------------------------------
+
 col_estado = obtener_columna_por_nombre(ws, "ESTADO")
+
 col_form   = obtener_columna_por_nombre(ws, "REPORTE_TECNICO")
 
+
+
 try:
+
     col_fenix = obtener_columna_por_nombre(ws, "ESTADO_FENIX")
+
 except Exception:
+
     col_fenix = None
 
 
+
+
+
 # ============================================================
+
 # 🎨 FORMATO CONDICIONAL – ESTADO
+
 # ============================================================
+
 rango_estado = f"${col_estado}$2:${col_estado}${ultima_fila}"
 
+
+
 ws.conditional_formatting.add(
+
     rango_estado,
+
     FormulaRule(
+
         formula=[f'${col_estado}2="VENCIDO"'],
+
         fill=PatternFill(fill_type="solid", start_color="FF0000", end_color="FF0000")
+
     )
+
 )
 
+
+
 ws.conditional_formatting.add(
+
     rango_estado,
+
     FormulaRule(
+
         formula=[f'${col_estado}2="ALERTA_0 Días"'],
+
         fill=PatternFill(fill_type="solid", start_color="FFA500", end_color="FFA500")
+
     )
+
 )
 
+
+
 ws.conditional_formatting.add(
+
     rango_estado,
+
     FormulaRule(
+
         formula=[f'${col_estado}2="ALERTA"'],
+
         fill=PatternFill(fill_type="solid", start_color="FFF200", end_color="FFF200")
+
     )
+
 )
+
+
 
 ws.conditional_formatting.add(
+
     rango_estado,
+
     FormulaRule(
+
         formula=[f'${col_estado}2="A TIEMPO"'],
+
         fill=PatternFill(fill_type="solid", start_color="00B050", end_color="00B050")
+
     )
+
 )
 
 
+
+
+
 # ============================================================
+# FORMATO CONDICIONAL EPM — COLUMNA LOCALIZADA POR ENCABEZADO
+# ============================================================
+col_estado_epm = obtener_columna_por_nombre(ws, "ESTADO_EPM")
+if ultima_fila >= 2:
+    rango_epm = f"${col_estado_epm}$2:${col_estado_epm}${ultima_fila}"
+    for estado_epm, color in [
+        ("VENCIDO", "C00000"),
+        ("DENTRO DEL PLAZO", "C6EFCE"),
+        ("SIN FECHA", "D9D9D9"),
+        ("SIN REGLA EPM", "FFC000"),
+    ]:
+        ws.conditional_formatting.add(
+            rango_epm,
+            FormulaRule(
+                formula=[f'${col_estado_epm}2="{estado_epm}"'],
+                fill=PatternFill(fill_type="solid", start_color=color, end_color=color)
+            )
+        )
+
+
+# ============================================================
+
 # 🎨 FORMATO CONDICIONAL – REPORTE_TECNICO
+
 # ============================================================
+
 rango_form = f"${col_form}$2:${col_form}${ultima_fila}"
 
+
+
 ws.conditional_formatting.add(
+
     rango_form,
+
     FormulaRule(
+
         formula=[f'EXACT(${col_form}2,"SIN DATO")'],
+
         fill=PatternFill(fill_type="solid", start_color="D9D9D9", end_color="D9D9D9")
+
     )
+
 )
 
 
+
+
+
 # # ============================================================
+
 # # 🎨 FORMATO CONDICIONAL – ESTADO_FENIX
+
 # # ============================================================
+
 # if col_fenix:
+
 #     rango_fenix = f"${col_fenix}$2:${col_fenix}${ultima_fila}"
 
-#     ws.conditional_formatting.add(
-#         rango_fenix,
-#         FormulaRule(
-#             formula=[f'${col_fenix}2="CERRADO"'],
-#             fill=PatternFill(fill_type="solid", start_color="00B050", end_color="00B050"),
-#             font=Font(color="FFFFFF")
-#         )
-#     )
+
 
 #     ws.conditional_formatting.add(
+
 #         rango_fenix,
+
 #         FormulaRule(
-#             formula=[f'${col_fenix}2="VENCIDO"'],
-#             fill=PatternFill(fill_type="solid", start_color="FF0000", end_color="FF0000"),
+
+#             formula=[f'${col_fenix}2="CERRADO"'],
+
+#             fill=PatternFill(fill_type="solid", start_color="00B050", end_color="00B050"),
+
 #             font=Font(color="FFFFFF")
+
 #         )
+
 #     )
+
+
+
+#     ws.conditional_formatting.add(
+
+#         rango_fenix,
+
+#         FormulaRule(
+
+#             formula=[f'${col_fenix}2="VENCIDO"'],
+
+#             fill=PatternFill(fill_type="solid", start_color="FF0000", end_color="FF0000"),
+
+#             font=Font(color="FFFFFF")
+
+#         )
+
+#     )
+
 # else:
+
 #     print("ℹ️ ESTADO_FENIX no existe en Excel: se omite su formato condicional.")
 
 
 
+
+
+
+
 # ============================================================
+
 # 💄 TABLA ESTRUCTURADA SEGURA (NO DUPLICA)
+
 # ============================================================
+
 if "FENIX_ANS_TABLA" not in ws.tables:
+
     tabla = Table(
+
         displayName="FENIX_ANS_TABLA",
+
         ref=f"A1:{ultima_col_letra}{ultima_fila}"
+
     )
+
     tabla.tableStyleInfo = TableStyleInfo(
+
         name="TableStyleMedium2",
+
         showRowStripes=True
+
     )
+
     ws.add_table(tabla)
 
 
+
+
+
 # ============================================================
+
 # 💡 AJUSTES VISUALES
+
 # ============================================================
+
 ws.sheet_view.showGridLines = False
 
+
+
 for col in ws.columns:
+
     max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+
     ws.column_dimensions[col[0].column_letter].width = max_len + 2
 
+# Ancho fijo de OBSERVACION, localizado por el encabezado.
+col_observacion = obtener_columna_por_nombre(ws, "OBSERVACION")
+ws.column_dimensions[col_observacion].width = 31.43
+
 for col_name in ["I", "J"]:
+
     for cell in ws[col_name]:
+
         cell.alignment = Alignment(horizontal="center")
 
 
+
+
+
 # ============================================================
+
 # 📋 HOJA CONFIG_DIAS_PACTADOS
+
 # ============================================================
+
 if "CONFIG_DIAS_PACTADOS" in wb.sheetnames:
+
     del wb["CONFIG_DIAS_PACTADOS"]
 
+
+
 ws_conf = wb.create_sheet("CONFIG_DIAS_PACTADOS")
+
 ws_conf.append(["Grupo Zona", "Actividad", "Descripción", "Días Urbanos", "Días Rurales"])
 
+
+
 # Trazabilidad de las reglas contractuales utilizadas en el cálculo ANS.
+
 datos = [
+
     ["METROPOLITANA SUR / BASE", "ACREV", "PUNTOS CONEXIÓN", 4, 4],
+
     ["METROPOLITANA SUR / BASE", "ALEGN", "LEGALIZACIÓN", 7, 10],
+
     ["METROPOLITANA SUR / BASE", "ALEGA", "LEGALIZACIÓN", 7, 10],
+
     ["METROPOLITANA SUR / BASE", "ALECA", "LEGALIZACIÓN", 7, 10],
+
     ["METROPOLITANA SUR / BASE", "ACAMN", "REFORMA", 7, 10],
+
     ["METROPOLITANA SUR / BASE", "AMRTR", "MOVIMIENTO RED", 9, 14],
+
     ["METROPOLITANA SUR / BASE", "REEQU", "PREPAGO", 11, 11],
+
     ["METROPOLITANA SUR / BASE", "INPRE", "INSTALACIÓN", 11, 11],
+
     ["METROPOLITANA SUR / BASE", "DIPRE", "DESINSTALAR", 8, 11],
+
     ["METROPOLITANA SUR / BASE", "ARTER", "REPLANTEO", 5, 8],
+
     ["METROPOLITANA SUR / BASE", "AEJDO", "EJECUCIÓN", 7, 12],
+
     ["METROPOLITANA SUR / BASE", "VITEC", "VITEC", 2, 2],
+
     ["METROPOLITANA SUR / BASE", "APLIN", "APLIN", 8, 8],
 
+
+
     ["SUROESTE / OCCIDENTE", "ACREV", "PUNTOS CONEXIÓN", 4, 4],
+
     ["SUROESTE / OCCIDENTE", "ALEGN", "LEGALIZACIÓN", 7, 10],
+
     ["SUROESTE / OCCIDENTE", "ALEGA", "LEGALIZACIÓN", 7, 10],
+
     ["SUROESTE / OCCIDENTE", "ALECA", "LEGALIZACIÓN", 7, 10],
+
     ["SUROESTE / OCCIDENTE", "ACAMN", "REFORMA", 6, 9],
+
     ["SUROESTE / OCCIDENTE", "AMRTR", "MOVIMIENTO RED", 9, 14],
+
     ["SUROESTE / OCCIDENTE", "REEQU", "PREPAGO", 11, 11],
+
     ["SUROESTE / OCCIDENTE", "INPRE", "INSTALACIÓN", 13, 13],
+
     ["SUROESTE / OCCIDENTE", "DIPRE", "DESINSTALAR", 11, 11],
+
     ["SUROESTE / OCCIDENTE", "ARTER", "REPLANTEO", 4, 8],
+
     ["SUROESTE / OCCIDENTE", "AEJDO", "EJECUCIÓN", 8, 13],
+
     ["SUROESTE / OCCIDENTE", "VITEC", "VITEC", 2, 2],
+
     ["SUROESTE / OCCIDENTE", "APLIN", "APLIN", 8, 8],
+
 ]
 
+
+
 for f in datos:
+
     ws_conf.append(f)
 
 
+
+
+
 # ============================================================
+# TABLA DE REFERENCIA EPM — GENERADA DESDE EL MAPA UTILIZADO
+# ============================================================
+ws_epm = wb.create_sheet("CONFIG_DIAS_EPM")
+ws_epm.append(["Actividad", "Días Urbanos", "Días Rurales"])
+for actividad, plazos in DIAS_PACTADOS_EPM_MAP.items():
+    ws_epm.append([actividad, plazos["URBANO"], plazos["RURAL"]])
+ws_epm.append([])
+ws_epm.append(["Nota", "ALEMN no tiene plazo en la tabla recibida."])
+ws_epm.append(["Calendario", "Mismo calendario hábil y festivos del cálculo ELITE."])
+ws_epm.append(["Alcance", "Tabla EPM entregada, aplicada a las subzonas del informe."])
+for c in ws_epm[1]:
+    c.font = Font(bold=True, color="FFFFFF")
+    c.fill = PatternFill(fill_type="solid", fgColor="007F78")
+for columna in ws_epm.columns:
+    ws_epm.column_dimensions[columna[0].column_letter].width = min(
+        80, max(len(str(c.value or "")) for c in columna) + 2
+    )
+ws_epm.freeze_panes = "A2"
+
+
+# ============================================================
+
 # 📋 HOJA META_INFO
+
 # ============================================================
+
 if "META_INFO" in wb.sheetnames:
+
     del wb["META_INFO"]
 
+
+
 ws_meta = wb.create_sheet("META_INFO")
+
 ws_meta["A1"] = "Fuente"
+
 ws_meta["B1"] = "FENIX"
+
 ws_meta["A2"] = "Fecha proceso"
-ws_meta["B2"] = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+ws_meta["B2"] = hoy.strftime("%d/%m/%Y %H:%M:%S")
+ws_meta["A3"] = "Criterio de vencimiento ELITE / EPM"
+ws_meta["B3"] = "Fecha corte > fecha límite (incluye hora y minuto)."
+ws_meta["A4"] = "Estado operativo"
+ws_meta["B4"] = "ESTADO corresponde a ELITE. ESTADO_EPM corresponde al plazo contractual."
+ws_meta["A5"] = "KPI"
+ws_meta["B5"] = "VENCIDO_ELITE y VENCIDO_EPM son indicadores 1/0 por pedido; no sumar entre sí."
+
+
+
+# Diferenciar únicamente los encabezados de las columnas nuevas.
+encabezados_nuevos = [
+    "DIAS_PACTADOS_EPM",
+    "FECHA_LIMITE_EPM",
+    "DIAS_RESTANTES_EPM",
+    "ESTADO_EPM",
+    "VENCIDO_ELITE",
+    "VENCIDO_EPM",
+]
+
+for nombre in encabezados_nuevos:
+    letra = obtener_columna_por_nombre(ws, nombre)
+    celda = ws[f"{letra}1"]
+
+    celda.fill = PatternFill(
+        fill_type="solid",
+        fgColor="007F78"
+    )
+    celda.font = Font(
+        name="Calibri",
+        size=11,
+        bold=True,
+        color="FFFFFF"
+    )
 
 # ============================================================
+
 # 💾 GUARDADO FINAL ÚNICO (CRÍTICO)
+
 # ============================================================
+
 wb.save(ruta_output)
+
 print("✅ FENIX_ANS.xlsx generado correctamente.")
