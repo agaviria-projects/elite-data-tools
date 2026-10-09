@@ -16,9 +16,10 @@ Descripción:
 
 - Calcula días y estados ELITE, además de plazo y vencimiento contractual EPM.
 
-- Excluye sábados, domingos y festivos.
+- Los días restantes excluyen sábados, domingos y festivos.
+- Inicio no hábil: cuenta como día 1 a las 00:00:00; vence al final del día límite (23:59:59).
 
-- Mantiene hora/minuto del inicio.
+- Inicio hábil: mantiene la regla y hora originales.
 
 - Exporta a FENIX_ANS.xlsx con hoja RESUMEN.
 
@@ -126,47 +127,55 @@ FESTIVOS = np.array([
 
 # ------------------------------------------------------------
 
+def es_inicio_no_habil(fecha):
+    if pd.isna(fecha):
+        return False
+    fecha = pd.Timestamp(fecha)
+    return not np.is_busday(np.datetime64(fecha.date()), weekmask=WEEKMASK, holidays=FESTIVOS)
+
+
+def inicio_para_conteo(fecha):
+    # La fecha de origen se conserva; medianoche se usa solo para calcular.
+    if es_inicio_no_habil(fecha):
+        return pd.Timestamp(fecha).normalize()
+    return fecha
+
+
+def resaltar_programacion_no_habil(ws):
+    # Resaltar identificador y fecha, sin modificar semáforos ni columnas.
+    encabezados = {str(c.value).strip().upper(): c.column for c in ws[1]}
+    col_fecha = encabezados.get("FECHA_INICIO_ANS")
+    col_pedido = encabezados.get("PEDIDO")
+    if col_fecha is None:
+        return
+    relleno = PatternFill(fill_type="solid", fgColor="DDEBF7")
+    for fila in range(2, ws.max_row + 1):
+        fecha = pd.to_datetime(ws.cell(fila, col_fecha).value, errors="coerce")
+        if es_inicio_no_habil(fecha):
+            ws.cell(fila, col_fecha).fill = relleno
+            if col_pedido is not None:
+                ws.cell(fila, col_pedido).fill = relleno
+
+
 def add_business_days_keep_time(start_dt, n_days):
-
     if pd.isna(start_dt) or n_days <= 0:
-
         return pd.NaT
-
-
-
     date_part = np.datetime64(start_dt.date())
-
-    time_part = start_dt.time()
-
-
-
-    # Día no hábil → primer hábil siguiente
-
-    if not np.is_busday(date_part, weekmask=WEEKMASK, holidays=FESTIVOS):
-
+    if es_inicio_no_habil(start_dt):
+        # Día de programación = día 1, incluso siendo no hábil.
+        if n_days == 1:
+            return inicio_para_conteo(start_dt).to_pydatetime().replace(hour=23, minute=59, second=59)
         primer_habil = np.busday_offset(date_part, 0, roll="forward",
-
-                                        weekmask=WEEKMASK, holidays=FESTIVOS)
-
-        limite = np.busday_offset(primer_habil, n_days - 1, roll="forward",
-
-                                  weekmask=WEEKMASK, holidays=FESTIVOS)
-
-    else:
-
-        # Día hábil → siguiente hábil
-
-        siguiente_habil = np.busday_offset(date_part, 1, roll="forward",
-
-                                           weekmask=WEEKMASK, holidays=FESTIVOS)
-
-        limite = np.busday_offset(siguiente_habil, n_days - 1, roll="forward",
-
-                                  weekmask=WEEKMASK, holidays=FESTIVOS)
-
-
-
-    return datetime.combine(pd.to_datetime(str(limite)).date(), time_part)
+                                       weekmask=WEEKMASK, holidays=FESTIVOS)
+        limite = np.busday_offset(primer_habil, n_days - 2, roll="forward",
+                                 weekmask=WEEKMASK, holidays=FESTIVOS)
+        return pd.Timestamp(limite).to_pydatetime().replace(hour=23, minute=59, second=59)
+    # Días hábiles: conservar exactamente la regla previa y la hora original.
+    siguiente_habil = np.busday_offset(date_part, 1, roll="forward",
+                                     weekmask=WEEKMASK, holidays=FESTIVOS)
+    limite = np.busday_offset(siguiente_habil, n_days - 1, roll="forward",
+                             weekmask=WEEKMASK, holidays=FESTIVOS)
+    return datetime.combine(pd.to_datetime(str(limite)).date(), start_dt.time())
 
 
 
@@ -182,6 +191,11 @@ def business_days_between(start_dt, end_dt):
 
         return np.nan
 
+    if es_inicio_no_habil(start_dt) and end_dt.date() >= start_dt.date():
+        # Día 1 original + días hábiles posteriores, incluyendo la fecha de corte.
+        desde = np.datetime64(start_dt.date() + timedelta(days=1))
+        hasta = np.datetime64(end_dt.date() + timedelta(days=1))
+        return 1 + int(np.busday_count(desde, hasta, weekmask=WEEKMASK, holidays=FESTIVOS))
     start_date = np.datetime64(start_dt.date() + timedelta(days=1))
 
     end_date = np.datetime64(end_dt.date())
@@ -479,12 +493,14 @@ def calcular_ans_epm(row, fecha_corte):
     if fecha_corte > limite:
         return (plazo, limite, "VENCIDO", "VENCIDO")
 
+    inicio = inicio_para_conteo(inicio)
     referencia = fecha_corte.replace(
         hour=inicio.hour, minute=inicio.minute,
         second=inicio.second, microsecond=0
     )
     restantes = plazo - business_days_between(inicio, referencia)
-    texto = f"{restantes} días {inicio.strftime('%H:%M')}"
+    hora_limite = limite.strftime("%H:%M") if es_inicio_no_habil(inicio) else inicio.strftime("%H:%M")
+    texto = f"{restantes} días {hora_limite}"
     return (plazo, limite, texto, "DENTRO DEL PLAZO")
 
 
@@ -570,6 +586,7 @@ def calcular_dias_transcurridos(row):
 
         return ""
 
+    fecha_ini = inicio_para_conteo(fecha_ini)
     hoy_ref = ajustar_hora(fecha_ini)
 
     dias_habiles = business_days_between(fecha_ini, hoy_ref)
@@ -612,6 +629,7 @@ def calcular_dias_restantes(row):
 
 
 
+    fecha_ini = inicio_para_conteo(fecha_ini)
     hoy_ref = ajustar_hora(fecha_ini)
 
     dias_transcurridos = business_days_between(fecha_ini, hoy_ref)
@@ -620,7 +638,8 @@ def calcular_dias_restantes(row):
 
 
 
-    return f"{dias_restantes} días {fecha_ini.strftime('%H:%M')}"
+    hora_limite = fecha_lim.strftime("%H:%M") if es_inicio_no_habil(fecha_ini) else fecha_ini.strftime("%H:%M")
+    return f"{dias_restantes} días {hora_limite}"
 
 
 
@@ -2523,6 +2542,9 @@ for nombre in encabezados_nuevos:
 
 # ============================================================
 
+resaltar_programacion_no_habil(ws)
+ws_meta["A6"] = "Programación no hábil"
+ws_meta["B6"] = "Sábado, domingo o festivo: día 1 a las 00:00; restantes hábiles; límite 23:59:59. Azul en PEDIDO y FECHA_INICIO_ANS."
 wb.save(ruta_output)
 
 print("✅ FENIX_ANS.xlsx generado correctamente.")

@@ -22,6 +22,66 @@ from pathlib import Path
 from openpyxl.worksheet.table import Table, TableStyleInfo
 import unicodedata
 import sys
+import numpy as np
+from openpyxl.styles import PatternFill
+
+# Calendario vigente idéntico al de calculos_ans.py.
+WEEKMASK = "1111100"
+FESTIVOS = np.array([
+
+    "2025-01-01","2025-01-06","2025-03-24","2025-04-17","2025-04-18",
+
+    "2025-05-01","2025-05-26","2025-06-16","2025-06-23","2025-07-07",
+
+    "2025-08-07","2025-08-18","2025-10-13","2025-11-03","2025-11-17",
+
+    "2025-12-08","2025-12-25",
+
+
+
+    "2026-01-01","2026-01-12","2026-03-23","2026-04-02","2026-04-03",
+
+    "2026-05-01","2026-05-18","2026-06-08","2026-06-15","2026-06-29",
+
+    "2026-07-13",  # ← Nuevo festivo decretado
+
+    "2026-07-20",
+
+    "2026-08-07","2026-08-17","2026-10-12","2026-11-02",
+
+    "2026-11-16","2026-12-08","2026-12-25"
+
+], dtype="datetime64[D]")
+
+def es_inicio_no_habil(fecha):
+    if pd.isna(fecha):
+        return False
+    fecha = pd.Timestamp(fecha)
+    return not np.is_busday(np.datetime64(fecha.date()), weekmask=WEEKMASK, holidays=FESTIVOS)
+
+
+def inicio_para_conteo(fecha):
+    # La fecha de origen se conserva; medianoche se usa solo para calcular.
+    if es_inicio_no_habil(fecha):
+        return pd.Timestamp(fecha).normalize()
+    return fecha
+
+
+def resaltar_programacion_no_habil(ws):
+    # Resaltar identificador y fecha, sin modificar semáforos ni columnas.
+    encabezados = {str(c.value).strip().upper(): c.column for c in ws[1]}
+    col_fecha = encabezados.get("FECHA_INICIO_ANS")
+    col_pedido = encabezados.get("PEDIDO")
+    if col_fecha is None:
+        return
+    relleno = PatternFill(fill_type="solid", fgColor="DDEBF7")
+    for fila in range(2, ws.max_row + 1):
+        fecha = pd.to_datetime(ws.cell(fila, col_fecha).value, errors="coerce")
+        if es_inicio_no_habil(fecha):
+            ws.cell(fila, col_fecha).fill = relleno
+            if col_pedido is not None:
+                ws.cell(fila, col_pedido).fill = relleno
+
 
 # ------------------------------------------------------------
 # CONFIGURACIÓN DE RUTAS
@@ -402,6 +462,8 @@ with pd.ExcelWriter(ruta_clean, engine="openpyxl") as writer:
         showRowStripes=True
     )
     ws.add_table(tabla)
+
+    resaltar_programacion_no_habil(ws)
 
 print("✅ FENIX_CLEAN.xlsx generado correctamente con todas las subzonas.")
 print(f"📊 Total registros finales: {len(df)}")
