@@ -148,7 +148,7 @@ def resaltar_programacion_no_habil(ws):
     col_pedido = encabezados.get("PEDIDO")
     if col_fecha is None:
         return
-    relleno = PatternFill(fill_type="solid", fgColor="DDEBF7")
+    relleno = PatternFill(fill_type="solid", fgColor="BDD7EE")
     for fila in range(2, ws.max_row + 1):
         fecha = pd.to_datetime(ws.cell(fila, col_fecha).value, errors="coerce")
         if es_inicio_no_habil(fecha):

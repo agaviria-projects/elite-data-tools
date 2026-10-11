@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from inspect import getsourcefile
 from time import perf_counter
 
 import pandas as pd
@@ -30,6 +31,40 @@ ZONAS_VALIDAS = {
     "OCCIDENTE",
     "TODAS",
 }
+
+
+# Diagnóstico temporal: no altera datos, estados ni cálculos.
+def registrar_origen_ans(informar, df, etapa):
+    campos = [
+        "PEDIDO", "FECHA_INICIO_ANS", "FECHA_LIMITE_ANS",
+        "FECHA_LIMITE_EPM", "ESTADO", "ESTADO_EPM", "SUBZONA",
+    ]
+    if etapa == "LECTURA":
+        ruta = leer_excel.__globals__.get("ARCHIVO_FENIX")
+        informar("🔎 DIAGNÓSTICO ANS — origen real de esta ejecución")
+        if ruta is not None:
+            ruta = Path(ruta).resolve()
+            informar(f"   Excel leído: {ruta}")
+            if ruta.is_file():
+                fecha = datetime.fromtimestamp(ruta.stat().st_mtime)
+                informar(f"   Última modificación del Excel: {fecha:%d/%m/%Y %H:%M:%S}")
+        else:
+            informar("   El lector no expone ARCHIVO_FENIX en sus variables globales.")
+        informar(f"   Lector ejecutado: {getsourcefile(leer_excel)}")
+        informar(f"   Generador HTML ejecutado: {getsourcefile(generar_html)}")
+    if "PEDIDO" not in df.columns:
+        informar(f"   {etapa}: falta la columna PEDIDO.")
+        return
+    pedidos = df["PEDIDO"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    encontrados = df.loc[pedidos.eq("23601040")]
+    if encontrados.empty:
+        informar(f"   {etapa}: el pedido 23601040 no está en este bloque.")
+        return
+    for indice, fila in encontrados.iterrows():
+        informar(f"   {etapa} — pedido 23601040, índice {indice}:")
+        for campo in campos:
+            if campo in df.columns:
+                informar(f"      {campo}: {fila[campo]}")
 
 
 def ejecutar_informe_ans(
@@ -79,6 +114,7 @@ def ejecutar_informe_ans(
     informar("📖 Leyendo información...")
 
     df = leer_excel()
+    registrar_origen_ans(informar, df, "LECTURA")
 
     informar(
         f"✅ Registros cargados: {len(df):,}"
@@ -247,6 +283,12 @@ def ejecutar_informe_ans(
         )
 
         informar("🧱 Construyendo HTML...")
+
+        for bloque in correo["bloques"]:
+            for actividad in bloque["actividades"]:
+                registrar_origen_ans(
+                    informar, actividad["tabla"], f"ANTES DEL HTML / {grupo}"
+                )
 
         html = generar_html(
             correo

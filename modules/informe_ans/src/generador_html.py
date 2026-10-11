@@ -1,4 +1,5 @@
 from pathlib import Path
+import ast
 import pandas as pd
 from html import escape
 
@@ -684,6 +685,86 @@ def badge_estado(estado: str):
     </tr>
 </table>
 """
+# Ruta opcional: establecer solo si el proyecto está fuera de Launcher_Elite.
+# Ejemplo: Path(r"C:\ruta\Launcher_Elite\Control_ANS_v5\calculos_ans.py")
+RUTA_CALCULOS_ANS = None
+
+
+def leer_calendario_correo():
+    """Lee constantes del calendario con AST; nunca ejecuta calculos_ans.py."""
+    if RUTA_CALCULOS_ANS is not None:
+        candidatos = [Path(RUTA_CALCULOS_ANS)]
+    else:
+        candidatos = []
+        for carpeta in (BASE_DIR, *BASE_DIR.parents):
+            candidatos.extend([
+                carpeta / "Control_ANS_v5" / "calculos_ans.py",
+                carpeta / "calculos_ans.py",
+            ])
+        candidatos.append(
+            Path.home() / "Desktop" / "Launcher_Elite"
+            / "Control_ANS_v5" / "calculos_ans.py"
+        )
+    ruta = next((p for p in candidatos if p.is_file()), None)
+    if ruta is None:
+        raise FileNotFoundError(
+            "No se encuentra Control_ANS_v5/calculos_ans.py. "
+            "Configurar RUTA_CALCULOS_ANS en generador_html.py."
+        )
+    arbol = ast.parse(ruta.read_text(encoding="utf-8-sig"), filename=str(ruta))
+    constantes = {}
+    for nodo in arbol.body:
+        if not isinstance(nodo, ast.Assign):
+            continue
+        nombres = [t.id for t in nodo.targets if isinstance(t, ast.Name)]
+        for nombre in nombres:
+            if nombre not in {"WEEKMASK", "FESTIVOS"}:
+                continue
+            valor = nodo.value
+            if nombre == "FESTIVOS" and isinstance(valor, ast.Call):
+                if not (
+                    isinstance(valor.func, ast.Attribute)
+                    and isinstance(valor.func.value, ast.Name)
+                    and valor.func.value.id == "np"
+                    and valor.func.attr == "array"
+                    and valor.args
+                ):
+                    raise ValueError("FESTIVOS debe ser una lista literal o np.array de una lista literal.")
+                valor = valor.args[0]
+            constantes[nombre] = ast.literal_eval(valor)
+    mascara = constantes.get("WEEKMASK")
+    festivos = constantes.get("FESTIVOS")
+    if (not isinstance(mascara, str) or len(mascara) != 7
+            or set(mascara) - {"0", "1"}
+            or not isinstance(festivos, (list, tuple))):
+        raise ValueError("No se pueden leer WEEKMASK y FESTIVOS del calendario vigente.")
+    # Las fechas se validan sin ejecutar funciones del script de cálculos.
+    fechas = {pd.to_datetime(f, format="%Y-%m-%d", errors="raise").date()
+              for f in festivos}
+    return mascara, fechas
+
+
+def fecha_para_resaltado(valor):
+    """Interpreta ISO o día/mes/año sin alterar el dato del DataFrame."""
+    if valor is None or pd.isna(valor) or str(valor).strip() == "":
+        return pd.NaT
+    if isinstance(valor, str):
+        texto = valor.strip()
+        iso = len(texto) >= 10 and texto[:4].isdigit() and texto[4] == "-"
+        return pd.to_datetime(texto, errors="coerce", dayfirst=not iso)
+    if isinstance(valor, (int, float)):
+        return pd.NaT
+    return pd.to_datetime(valor, errors="coerce")
+
+
+def programacion_no_habil(valor, calendario):
+    fecha = fecha_para_resaltado(valor)
+    if pd.isna(fecha):
+        return False
+    mascara, festivos = calendario
+    return fecha.weekday() >= 5 or mascara[fecha.weekday()] == "0" or fecha.date() in festivos
+
+
 # ==========================================================
 # GENERAR TABLA
 # ==========================================================
@@ -702,6 +783,9 @@ def generar_tabla(
     - Estados en badges compactos.
     """
     df = df.copy(deep=True)
+    if "FECHA_INICIO_ANS" not in df.columns:
+        raise ValueError("Falta FECHA_INICIO_ANS para identificar la programación no hábil.")
+    calendario = leer_calendario_correo() if not df.empty else None
     df = df.drop(columns=["SUBZONA"], errors="ignore")
     obtener_vencidos_epm(df)
     columnas_epm = ["ESTADO_EPM", "FECHA_LIMITE_EPM", "DIAS_RESTANTES_EPM"]
@@ -891,6 +975,7 @@ def generar_tabla(
     for indice, (_, fila) in enumerate(
         df.iterrows()
     ):
+        no_habil = programacion_no_habil(fila["FECHA_INICIO_ANS"], calendario)
         color_fila = (
             "#ffffff"
             if indice % 2 == 0
@@ -960,6 +1045,16 @@ def generar_tabla(
                 valor = "—" if pd.isna(fila[columna]) else escape(valor)
             elif columna == "FECHA_LIMITE_EPM":
                 valor = "—" if pd.isna(fila[columna]) else escape(valor)
+            # Formato visual: conserva la fecha y la hora existentes, sin recalcular.
+            resaltar = no_habil and columna in {
+                "PEDIDO", "FECHA_LIMITE_ANS", "FECHA_LIMITE_EPM"
+            }
+            if resaltar and columna in {"FECHA_LIMITE_ANS", "FECHA_LIMITE_EPM"}:
+                fecha_limite = fecha_para_resaltado(fila[columna])
+                if pd.notna(fecha_limite):
+                    valor = escape(fecha_limite.strftime("%d/%m/%Y %H:%M:%S"))
+            fondo_celda = 'bgcolor="#9DC3E6"' if resaltar else ""
+            estilo_resaltado = "background-color:#9DC3E6;color:#1f2937;" if resaltar else ""
             # ----------------------------------------------
             # ALINEACIÓN
             # ----------------------------------------------
@@ -1012,6 +1107,7 @@ def generar_tabla(
             # ----------------------------------------------
             html += f"""
             <td
+                {fondo_celda}
                 height="30"
                 valign="middle"
                 style="
@@ -1027,6 +1123,7 @@ def generar_tabla(
                     line-height:14px;
                     mso-line-height-rule:exactly;
                     {estilo_extra}
+                    {estilo_resaltado}
                 "
             >
                 {valor}
@@ -1036,6 +1133,7 @@ def generar_tabla(
     html += """
     </table>
     """
+    html += '<p style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#1f2937;margin:0 0 16px;">Azul: pedidos programados en sábado, domingo o festivo; plazo hasta las 23:59:59 del día límite.</p>'
     return html
 # ==========================================================
 # LEER FOOTER
