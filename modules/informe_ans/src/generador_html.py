@@ -1133,7 +1133,7 @@ def generar_tabla(
     html += """
     </table>
     """
-    html += '<p style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#1f2937;margin:0 0 16px;">Azul: pedidos programados en sábado, domingo o festivo; plazo hasta las 23:59:59 del día límite.</p>'
+    html += '<p style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#1f2937;margin:0 0 16px;">Pedidos seleccionados en Azul:son pedidos programados el sábado, domingo o festivo;el plazo hasta las 23:59:59 del día límite.</p>'
     return html
 # ==========================================================
 # LEER FOOTER
