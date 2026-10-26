@@ -5,6 +5,7 @@
 # ============================================================
 
 from pathlib import Path
+import unicodedata
 import pandas as pd
 from datetime import datetime
 from openpyxl import load_workbook
@@ -1145,32 +1146,62 @@ print(
 
 # ============================================================
 # HOJA NUEVA: MATERIALES_CANTIDAD
-# Detecta materiales SUM con cantidad > 1
+# Detecta materiales SUM con cantidad > 1 y controla cantidad 1
+# para 200092, 200093 y CALE1F.
 # ============================================================
 
-df_material_cantidad = df_export[
+df_materiales_cantidad_base = df_export[
     df_export["tipo"] == "SUM"
 ].copy()
 
-df_material_cantidad["material"] = (
-    df_material_cantidad["item_res"]
-    .astype(str)
+df_materiales_cantidad_base["material"] = (
+    df_materiales_cantidad_base["item_res"]
+    .fillna("").astype(str)
     .str.strip()
+    .str.upper()
 )
+if "suminis" in df_materiales_cantidad_base.columns:
+    codigo_suminis = (
+        df_materiales_cantidad_base["suminis"]
+        .fillna("").astype(str).str.strip().str.upper()
+    )
+    sin_codigo = df_materiales_cantidad_base["material"].eq("")
+    codigo_especial_suminis = codigo_suminis.isin(
+        {"200092", "200093", "CALE1F"}
+    )
+    usar_suminis = sin_codigo | codigo_especial_suminis
+    df_materiales_cantidad_base.loc[usar_suminis, "material"] = codigo_suminis[usar_suminis]
 
-df_material_cantidad["cantidad"] = pd.to_numeric(
-    df_material_cantidad["cantidad"]
-    .astype(str)
+materiales_cantidad_uno = {"200092", "200093", "CALE1F"}
+
+df_materiales_cantidad_base["cantidad"] = pd.to_numeric(
+    df_materiales_cantidad_base["cantidad"]
+    .fillna("").astype(str)
     .str.replace(",", ".", regex=False)
     .str.strip(),
     errors="coerce"
 ).fillna(0)
 
-df_material_cantidad = df_material_cantidad[
-    df_material_cantidad["cantidad"] > 1
-][
-    ["pedido", "actividad", "subz", "material", "cantidad"]
-].copy()
+df_material_cantidad = df_materiales_cantidad_base[
+    (df_materiales_cantidad_base["cantidad"] > 1)
+    & ~df_materiales_cantidad_base["material"].isin(materiales_cantidad_uno)
+][["pedido", "actividad", "subz", "material", "cantidad"]].copy()
+
+df_cantidad_uno = (
+    df_materiales_cantidad_base[
+        df_materiales_cantidad_base["material"].isin(materiales_cantidad_uno)
+    ]
+    .groupby(["pedido", "actividad", "subz", "material"], dropna=False)["cantidad"]
+    .sum()
+    .reset_index()
+)
+df_cantidad_uno = df_cantidad_uno[df_cantidad_uno["cantidad"].ne(1)].copy()
+df_cantidad_uno["alerta"] = "MATERIAL_CANTIDAD_DISTINTA_1"
+df_cantidad_uno["detalle"] = (
+    df_cantidad_uno["material"] + " tiene cantidad total "
+    + df_cantidad_uno["cantidad"].astype(str)
+    + "; debe ser 1 en el pedido y la actividad."
+)
 
 df_material_cantidad = df_material_cantidad.rename(
     columns={
@@ -1186,8 +1217,13 @@ df_material_cantidad["detalle"] = (
     + df_material_cantidad["cantidad"].astype(str)
 )
 
+df_material_cantidad = pd.concat(
+    [df_material_cantidad, df_cantidad_uno.rename(columns={"subz": "subzona"})],
+    ignore_index=True,
+)
+
 print(
-    f"🚨 Materiales con cantidad > 1 encontrados: "
+    f"🚨 Alertas de cantidad de materiales encontradas: "
     f"{len(df_material_cantidad)}"
 )
 
@@ -1410,9 +1446,9 @@ print(
 
 # ============================================================
 # ALERTA_PAGINA_7MO_DIGITO
-# Solo páginas que comienzan por 190:
-# séptimo dígito 1 -> urbano (U); séptimo dígito 2 -> rural (R).
-# Se reportan únicamente las clasificaciones opuestas.
+# Páginas 190: séptimo dígito 1 -> U, 2 -> R; se reporta la zona opuesta.
+# En páginas 190 y 200-999, cualquier otro séptimo dígito requiere revisión.
+# Páginas que comienzan por 200-999: revisar el prefijo en MARCOPOLO.
 # ============================================================
 
 def validar_pagina_zona(df_export_in):
@@ -1429,18 +1465,21 @@ def validar_pagina_zona(df_export_in):
         )
         return pd.DataFrame(columns=columnas_salida)
 
-    df = df_export_in[["pedido", "subz", "pagina", "urbrur"]].copy()
-    df["pagina"] = df["pagina"].fillna("").astype(str).str.strip()
-    df["urbrur"] = df["urbrur"].fillna("").astype(str).str.strip().str.upper()
-    df = df[df["pagina"].str.match(r"^190\d{4}", na=False)].copy()
-    df["septimo_digito"] = df["pagina"].str[6]
-    df = df[
-        (df["septimo_digito"].eq("1") & df["urbrur"].eq("R"))
-        | (df["septimo_digito"].eq("2") & df["urbrur"].eq("U"))
+    origen = df_export_in[["pedido", "subz", "pagina", "urbrur"]].copy()
+    origen["pagina"] = origen["pagina"].fillna("").astype(str).str.strip()
+    origen["urbrur"] = origen["urbrur"].fillna("").astype(str).str.strip().str.upper()
+
+    df_190 = origen[origen["pagina"].str.match(r"^190\d{4}", na=False)].copy()
+    df_190["septimo_digito"] = df_190["pagina"].str[6]
+    digito_190_no_reconocido = ~df_190["septimo_digito"].isin(["1", "2"])
+    df_190 = df_190[
+        (df_190["septimo_digito"].eq("1") & df_190["urbrur"].eq("R"))
+        | (df_190["septimo_digito"].eq("2") & df_190["urbrur"].eq("U"))
+        | digito_190_no_reconocido
     ].copy()
-    df["valor_esperado"] = df["septimo_digito"].map({"1": "U", "2": "R"})
-    df["estado"] = "INCONSISTENCIA_PAGINA_7MO_DIGITO"
-    df["detalle"] = df.apply(
+    df_190["valor_esperado"] = df_190["septimo_digito"].map({"1": "U", "2": "R"})
+    df_190["estado"] = "INCONSISTENCIA_PAGINA_7MO_DIGITO"
+    df_190["detalle"] = df_190.apply(
         lambda fila: (
             f"La página {fila['pagina']} tiene {fila['septimo_digito']} en el "
             f"séptimo dígito: urbrur debe ser {fila['valor_esperado']} "
@@ -1448,6 +1487,42 @@ def validar_pagina_zona(df_export_in):
         ),
         axis=1,
     )
+    digito_190_no_reconocido = ~df_190["septimo_digito"].isin(["1", "2"])
+    df_190.loc[digito_190_no_reconocido, "valor_esperado"] = "1 O 2"
+    df_190.loc[digito_190_no_reconocido, "estado"] = "DIGITO_7_NO_RECONOCIDO"
+    df_190.loc[digito_190_no_reconocido, "detalle"] = df_190.loc[
+        digito_190_no_reconocido, "pagina"
+    ].map(
+        lambda pagina: (
+            f"Página {pagina}: el séptimo dígito es {pagina[6]}; "
+            "solo se reconocen 1 (urbano) y 2 (rural). Validar en MARCOPOLO."
+        )
+    )
+
+    df_prefijo = origen[
+        origen["pagina"].str.fullmatch(r"[2-9]\d{2,}", na=False)
+    ].copy()
+    df_prefijo["septimo_digito"] = df_prefijo["pagina"].str[6].fillna("")
+    df_prefijo["valor_esperado"] = "CONSULTAR MARCOPOLO"
+    df_prefijo["estado"] = "VALIDAR_EN_MARCOPOLO"
+    df_prefijo["detalle"] = df_prefijo["pagina"].map(
+        lambda pagina: (
+            f"Página {pagina}: comienza por {pagina[:3]} (rango 200 a 999). "
+            "Puede existir un error de digitación; validar la página en MARCOPOLO."
+        )
+    )
+    digito_prefijo_no_reconocido = ~df_prefijo["septimo_digito"].isin(["1", "2"])
+    df_prefijo.loc[digito_prefijo_no_reconocido, "detalle"] = df_prefijo.loc[
+        digito_prefijo_no_reconocido, "pagina"
+    ].map(
+        lambda pagina: (
+            f"Página {pagina}: comienza por {pagina[:3]} (rango 200 a 999) "
+            f"y su séptimo dígito es {pagina[6] if len(pagina) > 6 else 'inexistente'}; "
+            "solo se reconocen 1 (urbano) y 2 (rural). Validar en MARCOPOLO."
+        )
+    )
+
+    df = pd.concat([df_190, df_prefijo], ignore_index=True)
     df = df.rename(columns={"subz": "subzona"})
     return (
         df[columnas_salida]
@@ -1459,6 +1534,158 @@ def validar_pagina_zona(df_export_in):
 
 df_alerta_pagina_zona = validar_pagina_zona(df_export)
 print(f"🚨 Inconsistencias en el séptimo dígito de página encontradas: {len(df_alerta_pagina_zona)}")
+
+
+# ============================================================
+# ALERTA_PAGINA_MUNICIPIO
+# Prefijos de página por municipio de la zona sur metropolitana.
+# Los prefijos compartidos requieren consulta en MARCOPOLO.
+# ============================================================
+
+PREFIJOS_PAGINA_MUNICIPIO = {
+    "MEDELLIN": {
+        "U": ("04", "05", "06", "08", "70", "116", "136"),
+        "R": ("122", "124", "126", "130", "139", "146", "147", "148", "162"),
+        "MARCOPOLO": ("103", "114", "117", "119"),
+    },
+    "ITAGUI": {
+        "U": ("07", "77"),
+        "R": (),
+        "MARCOPOLO": ("163",),
+    },
+    "ENVIGADO": {
+        "U": ("02",),
+        "R": ("125", "166"),
+        "MARCOPOLO": ("140",),
+    },
+    "LA ESTRELLA": {
+        "U": ("03",),
+        "R": (),
+        "MARCOPOLO": ("159",),
+    },
+    "SABANETA": {
+        "U": ("01",),
+        "R": (),
+        "MARCOPOLO": ("167",),
+    },
+    "CALDAS": {
+        "U": ("00",),
+        "R": ("161", "1901302"),
+        "MARCOPOLO": (),
+    },
+}
+
+
+def _normalizar_municipio_pagina(valor):
+    nombre = str(valor or "").strip().upper()
+    # Algunos TXT de Fénix traen caracteres UTF-8 interpretados como latin-1.
+    if "Ã" in nombre:
+        try:
+            nombre = nombre.encode("latin-1").decode("utf-8")
+        except (UnicodeError, ValueError):
+            pass
+    nombre = unicodedata.normalize("NFKD", nombre.upper())
+    return " ".join(
+        "".join(c for c in nombre if not unicodedata.combining(c)).split()
+    )
+
+
+def validar_pagina_municipio(df_export_in):
+    columnas = [
+        "pedido", "subzona", "municipio", "pagina", "item_cont", "prefijo",
+        "urbrur", "zona_esperada", "tipo_alerta", "detalle",
+    ]
+    requeridas = {"pedido", "subz", "municipio", "pagina", "urbrur", "item_cont"}
+    faltantes = requeridas - set(df_export_in.columns)
+    if faltantes:
+        print(f"⚠️ No se pudo ejecutar ALERTA_PAGINA_MUNICIPIO. Faltan columnas: {sorted(faltantes)}")
+        return pd.DataFrame(columns=columnas)
+
+    campos = ["pedido", "subz", "municipio", "pagina", "urbrur", "item_cont"]
+    if "tipo" in df_export_in.columns:
+        campos.append("tipo")
+    datos = df_export_in[campos].copy()
+    for campo in ("pedido", "subz", "pagina", "urbrur"):
+        datos[campo] = datos[campo].fillna("").astype(str).str.strip()
+    datos["urbrur"] = datos["urbrur"].str.upper()
+    datos["item_cont"] = datos["item_cont"].fillna("").astype(str).str.strip().str.upper()
+    if "tipo" in datos.columns:
+        datos["tipo"] = datos["tipo"].fillna("").astype(str).str.strip().str.upper()
+    datos["municipio_normalizado"] = datos["municipio"].fillna("").map(
+        _normalizar_municipio_pagina
+    )
+    datos = datos[datos["pagina"].str.fullmatch(r"\d+", na=False)]
+    datos = datos[datos["municipio_normalizado"].isin(PREFIJOS_PAGINA_MUNICIPIO)]
+
+    # Una sola celda por pedido, subzona y página: reunir los ítems CON
+    # en el orden del TXT sin repetir códigos ni incluir líneas SUM.
+    filas_items = datos[datos["item_cont"].ne("")]
+    if "tipo" in datos.columns:
+        filas_items = filas_items[filas_items["tipo"].eq("CON")]
+    items_por_pedido_pagina = (
+        filas_items.groupby(["pedido", "subz", "pagina"])["item_cont"]
+        .agg(lambda valores: ", ".join(dict.fromkeys(valores)))
+        .to_dict()
+    )
+    datos["item_cont"] = datos.apply(
+        lambda fila: items_por_pedido_pagina.get(
+            (fila["pedido"], fila["subz"], fila["pagina"]), ""
+        ),
+        axis=1,
+    )
+    datos = datos.drop_duplicates(
+        subset=["pedido", "subz", "municipio_normalizado", "pagina", "urbrur"]
+    )
+
+    alertas = []
+    for fila in datos.itertuples(index=False):
+        reglas = PREFIJOS_PAGINA_MUNICIPIO[fila.municipio_normalizado]
+        # La coincidencia más larga evita que un prefijo corto oculte otro.
+        coincidencias = [
+            (prefijo, zona)
+            for zona, prefijos in reglas.items()
+            for prefijo in prefijos
+            if fila.pagina.startswith(prefijo)
+        ]
+        if not coincidencias:
+            continue  # El documento no clasifica los demás prefijos.
+        prefijo, esperado = max(coincidencias, key=lambda par: len(par[0]))
+        if esperado == "MARCOPOLO":
+            tipo = "VALIDAR_EN_MARCOPOLO"
+            detalle = (
+                f"En {fila.municipio_normalizado}, el prefijo {prefijo} puede ser "
+                "urbano o rural. Verificar la página en MARCOPOLO."
+            )
+            zona_esperada = "CONSULTAR MARCOPOLO"
+        elif fila.urbrur != esperado:
+            tipo = "INCONSISTENCIA_PAGINA_MUNICIPIO"
+            zona_esperada = "URBANO (U)" if esperado == "U" else "RURAL (R)"
+            detalle = (
+                f"En {fila.municipio_normalizado}, la página que inicia por "
+                f"{prefijo} corresponde a {zona_esperada}; se registró "
+                f"{fila.urbrur or 'sin clasificación'}."
+            )
+        else:
+            continue
+        alertas.append({
+            "pedido": fila.pedido, "subzona": fila.subz,
+            "municipio": fila.municipio, "pagina": fila.pagina,
+            "item_cont": fila.item_cont,
+            "prefijo": prefijo, "urbrur": fila.urbrur,
+            "zona_esperada": zona_esperada, "tipo_alerta": tipo,
+            "detalle": detalle,
+        })
+
+    return (
+        pd.DataFrame(alertas, columns=columnas)
+        .drop_duplicates(subset=["pedido", "subzona", "municipio", "pagina", "urbrur", "tipo_alerta"])
+        .sort_values(["subzona", "municipio", "pedido", "pagina"], kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+df_alerta_pagina_municipio = validar_pagina_municipio(df_export)
+print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_municipio)}")
 
 
 # ============================================================
@@ -1504,7 +1731,8 @@ print(f"🚨 Inconsistencias en el séptimo dígito de página encontradas: {len
 #     con la misma terminacion.
 #   - Si ambos estan presentes, cumple y no genera observacion.
 #
-# Esta hoja NO valida Rural/Urbano.
+# A22: se cruza urbrur y tipre en AEJDO, DIPRE y DSPRE.
+# A04R/A05R y A06R: correcciones según urbrur en cinco actividades.
 # ============================================================
 
 def validar_reglas_actividades(df_export_in):
@@ -1513,6 +1741,8 @@ def validar_reglas_actividades(df_export_in):
         "pedido",
         "subzona",
         "actividad",
+        "urbrur",
+        "tipre",
         "tipo_alerta",
         "items_encontrados",
         "items_faltantes",
@@ -1552,6 +1782,13 @@ def validar_reglas_actividades(df_export_in):
     # Se reconocen ambas ubicaciones para mantener compatibilidad.
     if "suminis" not in df.columns:
         df["suminis"] = ""
+    # Estos campos se usan para las reglas nuevas que cruzan zona e ítem.
+    # Si un TXT antiguo no los trae, las reglas anteriores siguen funcionando.
+    tiene_urbrur = "urbrur" in df.columns
+    tiene_datos_a22 = {"urbrur", "tipre"}.issubset(df.columns)
+    for columna_a22 in ("urbrur", "tipre"):
+        if columna_a22 not in df.columns:
+            df[columna_a22] = ""
 
     for columna in [
         "pedido",
@@ -1560,6 +1797,8 @@ def validar_reglas_actividades(df_export_in):
         "item_cont",
         "item_res",
         "suminis",
+        "urbrur",
+        "tipre",
     ]:
         df[columna] = (
             df[columna]
@@ -1603,11 +1842,15 @@ def validar_reglas_actividades(df_export_in):
         faltantes,
         detalle,
         no_permitidos=None,
+        urbrur_valor="",
+        tipre_valor="",
     ):
         resultados.append({
             "pedido": pedido,
             "subzona": subzona,
             "actividad": actividad,
+            "urbrur": urbrur_valor,
+            "tipre": tipre_valor,
             "tipo_alerta": tipo_alerta,
             "items_encontrados": ", ".join(encontrados),
             "items_faltantes": ", ".join(faltantes),
@@ -1637,6 +1880,101 @@ def validar_reglas_actividades(df_export_in):
         # Conjunto unificado de suministros. Evita depender de que el
         # exporte replique el codigo en item_res y en suminis.
         suministros = items_res | items_suminis
+
+        # La corrección se basa en los ítems CON de la misma zona y
+        # del mismo pedido, subzona y actividad.
+        if tiene_urbrur and actividad in {
+            "AEJDO", "INPRE", "DIPRE", "REEQU", "DSPRE"
+        }:
+            filas_mo_zona = grupo
+            if "tipo" in grupo.columns:
+                filas_mo_zona = grupo[
+                    grupo["tipo"].fillna("").astype(str).str.upper().str.strip().eq("CON")
+                ]
+            items_rurales = set(
+                filas_mo_zona.loc[filas_mo_zona["urbrur"].eq("R"), "item_cont"]
+            )
+            items_urbanos = set(
+                filas_mo_zona.loc[filas_mo_zona["urbrur"].eq("U"), "item_cont"]
+            )
+
+            if {"A04R", "A05R"}.issubset(items_rurales):
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "CORREGIR_A04R_A05R_POR_A06R",
+                    ["A04R", "A05R"], ["A06R"],
+                    "En zona rural, los ítems A04R y A05R registrados juntos "
+                    "deben corregirse por A06R.",
+                    no_permitidos=["A04R", "A05R"], urbrur_valor="R",
+                )
+
+            if "A06R" in items_urbanos:
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "CORREGIR_A06R_POR_A04U_A05U",
+                    ["A06R"], ["A04U", "A05U"],
+                    "En zona urbana, A06R debe corregirse por los ítems "
+                    "A04U y A05U.",
+                    no_permitidos=["A06R"], urbrur_valor="U",
+                )
+
+        # A22 se revisa solo sobre la línea de mano de obra. Las tres
+        # condiciones usan el valor de urbrur y tipre de esa misma línea.
+        if tiene_datos_a22 and actividad in {"AEJDO", "DIPRE", "DSPRE"}:
+            filas_a22 = grupo[grupo["item_cont"].isin({"A22U", "A22R"})]
+            if "tipo" in filas_a22.columns:
+                filas_a22 = filas_a22[
+                    filas_a22["tipo"].fillna("").astype(str).str.upper().str.strip().eq("CON")
+                ]
+            filas_a22 = filas_a22.drop_duplicates(
+                subset=["item_cont", "urbrur", "tipre"]
+            )
+            for fila_a22 in filas_a22.itertuples(index=False):
+                codigo = fila_a22.item_cont
+                zona = fila_a22.urbrur
+                tipo_prepago = fila_a22.tipre
+
+                if (actividad == "AEJDO" and zona == "U" and codigo == "A22U"
+                        and tipo_prepago not in {"ENESUB", "ENEPIL"}):
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad, "A22U_TIPO_PREPAGO_NO_VALIDO",
+                        [codigo], ["tipre ENESUB o ENEPIL"],
+                        "A22U urbano en AEJDO solo es válido para prepago "
+                        "ENESUB o ENEPIL. Revisar el tipo de prepago registrado.",
+                        urbrur_valor=zona, tipre_valor=tipo_prepago,
+                    )
+                elif (actividad in {"DIPRE", "DSPRE"} and zona == "U"
+                      and codigo == "A22U" and tipo_prepago == "ENEPRE"):
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad, "A22U_NO_VALIDO_ENEPRE",
+                        [codigo], ["tipre ENESUB o ENEPIL"],
+                        "A22U urbano no corresponde a ENEPRE. Este ítem solo "
+                        "es válido para prepago ENESUB o ENEPIL.",
+                        urbrur_valor=zona, tipre_valor=tipo_prepago,
+                    )
+                elif (actividad in {"DIPRE", "DSPRE"} and zona == "R"
+                      and codigo == "A22R" and tipo_prepago == ""):
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad, "OBSERVACION_A22R_POSTE",
+                        [codigo], [],
+                        "A22R rural con tipre vacío: verificar si el medidor "
+                        "está ubicado en poste. Si no lo está, cambiar el ítem.",
+                        urbrur_valor=zona, tipre_valor=tipo_prepago,
+                    )
+
+        # A18 exige A19 de la misma zona en las dos actividades indicadas.
+        if actividad in {"AEJDO", "INPRE"}:
+            for terminacion in ("U", "R"):
+                a18 = f"A18{terminacion}"
+                a19 = f"A19{terminacion}"
+                if a18 in items_cont and a19 not in items_cont:
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad,
+                        "REGLA_A18_REQUIERE_A19",
+                        [a18], [a19],
+                        f"Si {actividad} tiene {a18}, también debe registrar {a19} "
+                        "en el mismo pedido, subzona y actividad.",
+                    )
 
         # ====================================================
         # AMRTR
@@ -1969,6 +2307,29 @@ def validar_reglas_actividades(df_export_in):
                     "CALE1F. Falta: " + ", ".join(faltantes),
                 )
 
+            # Con A12 debe existir uno de los dos medidores y ambos
+            # suministros 215887 y 219404. CALE1F se controla arriba.
+            if tiene_a12:
+                faltantes_a12 = []
+                if not (suministros & {"200092", "200093"}):
+                    faltantes_a12.append("200092 o 200093")
+                faltantes_a12.extend(
+                    codigo for codigo in ("215887", "219404")
+                    if codigo not in suministros
+                )
+                if faltantes_a12:
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad,
+                        "REGLA_AEJDO_A12_MATERIALES",
+                        a12_encontrados + sorted(
+                            suministros & {"200092", "200093", "215887", "219404"}
+                        ),
+                        faltantes_a12,
+                        "Si AEJDO tiene A12U o A12R, debe incluir 200092 o "
+                        "200093 y, además, los suministros 215887 y 219404. "
+                        "CALE1F se valida en la regla A12/CALE1F.",
+                    )
+
             # Los suministros 215887 y 219404 deben llevar cobro.
             # La cantidad reportada no modifica esta validacion.
             for codigo_cobro in ("215887", "219404"):
@@ -2123,10 +2484,24 @@ def validar_reglas_actividades(df_export_in):
             columns=columnas_salida
         )
 
-    return pd.DataFrame(
-        resultados,
-        columns=columnas_salida
+    # Presentar el contexto también en las alertas existentes de esta hoja.
+    contexto = df.groupby(["pedido", "subz", "actividad"])[["urbrur", "tipre"]].agg(
+        lambda valores: ", ".join(dict.fromkeys(v for v in valores if v))
     )
+    for resultado in resultados:
+        if resultado["tipo_alerta"] in {
+            "A22U_TIPO_PREPAGO_NO_VALIDO", "A22U_NO_VALIDO_ENEPRE",
+            "OBSERVACION_A22R_POSTE",
+            "CORREGIR_A04R_A05R_POR_A06R", "CORREGIR_A06R_POR_A04U_A05U",
+        }:
+            continue  # Conservar la zona exacta que disparó la regla.
+        clave = (resultado["pedido"], resultado["subzona"], resultado["actividad"])
+        if clave in contexto.index:
+            for campo in ("urbrur", "tipre"):
+                if not resultado.get(campo):
+                    resultado[campo] = contexto.loc[clave, campo]
+
+    return pd.DataFrame(resultados, columns=columnas_salida)
 
 
 df_alerta_actividades = (
@@ -2651,8 +3026,52 @@ def validar_masivas(df_export_in):
                 ),
             }
 
+    # La página completa puede repetirse en distintos pedidos de la
+    # misma subzona. Varias filas del mismo pedido no son duplicidad.
+    pedidos_por_pagina = (
+        df.groupby(["subz", "pagina"])["pedido"]
+        .agg(lambda valores: sorted(set(valores)))
+    )
+    claves_duplicadas = {
+        clave: pedidos for clave, pedidos in pedidos_por_pagina.items()
+        if len(pedidos) > 1
+    }
+    mask_duplicadas = df.apply(
+        lambda fila: (
+            (fila["subz"], fila["pagina"]) in claves_duplicadas
+            and (fila["subz"], fila["pagina_base"]) in claves_aplicables
+            and fila["item_cont"] in items_controlados
+        ),
+        axis=1,
+    )
+    df_duplicadas = df[mask_duplicadas].copy()
+    if not df_duplicadas.empty:
+        instalaciones_por_base = df.groupby(["subz", "pagina_base"])["pagina"].nunique()
+        df_duplicadas["cantidad_instalaciones"] = df_duplicadas.apply(
+            lambda fila: int(instalaciones_por_base[(fila["subz"], fila["pagina_base"])]),
+            axis=1,
+        )
+        df_duplicadas["items_encontrados"] = df_duplicadas["item_cont"]
+        df_duplicadas["item_esperado"] = ""
+        df_duplicadas["tipo_alerta"] = "PAGINA_DUPLICADA"
+        df_duplicadas["detalle"] = df_duplicadas.apply(
+            lambda fila: (
+                f"La página completa {fila['pagina']} aparece en distintos pedidos "
+                f"de la subzona {fila['subz']}: "
+                + ", ".join(claves_duplicadas[(fila["subz"], fila["pagina"])])
+                + ". Revisar duplicidad."
+            ),
+            axis=1,
+        )
+        df_duplicadas = (
+            df_duplicadas.rename(columns={"subz": "subzona"})[columnas_salida]
+            .drop_duplicates(subset=["pedido", "subzona", "pagina", "item_cont"])
+        )
+    else:
+        df_duplicadas = pd.DataFrame(columns=columnas_salida)
+
     if not alertas_por_base:
-        return pd.DataFrame(columns=columnas_salida)
+        return df_duplicadas.reset_index(drop=True)
 
     mask_alerta = df.apply(
         lambda r: (
@@ -2727,7 +3146,10 @@ def validar_masivas(df_export_in):
         .reset_index(drop=True)
     )
 
-    return df_alerta[columnas_salida]
+    return pd.concat(
+        [df_alerta[columnas_salida], df_duplicadas],
+        ignore_index=True,
+    )
 
 
 df_masivas = validar_masivas(df_export)
@@ -2802,6 +3224,12 @@ with pd.ExcelWriter(
         index=False
     )
 
+    df_alerta_pagina_municipio.to_excel(
+        writer,
+        sheet_name="ALERTA_PAGINA_MUNICIPIO",
+        index=False
+    )
+
     df_alerta_actividades.to_excel(
         writer,
         sheet_name="ALERTA_ACTIVIDADES",
@@ -2844,6 +3272,9 @@ if "ALERTA_RURAL_URBANO" in wb.sheetnames:
 
 if "ALERTA_PAGINA_7MO_DIGITO" in wb.sheetnames:
     wb["ALERTA_PAGINA_7MO_DIGITO"].sheet_properties.tabColor = "9C5700"
+
+if "ALERTA_PAGINA_MUNICIPIO" in wb.sheetnames:
+    wb["ALERTA_PAGINA_MUNICIPIO"].sheet_properties.tabColor = "548235"
 
 if "ALERTA_ACTIVIDADES" in wb.sheetnames:
     wb[
@@ -3279,12 +3710,36 @@ if "ALERTA_PAGINA_7MO_DIGITO" in wb.sheetnames:
         celda.font = Font(color="FFFFFF", bold=True)
         celda.alignment = Alignment(horizontal="center", vertical="center")
     for fila in ws_pz.iter_rows(min_row=2):
+        color = "FFF2CC" if fila[6].value == "VALIDAR_EN_MARCOPOLO" else "FCE4D6"
         for celda in fila:
-            celda.fill = PatternFill("solid", fgColor="FCE4D6")
+            celda.fill = PatternFill("solid", fgColor=color)
     for columna in ws_pz.columns:
         letra = get_column_letter(columna[0].column)
         ancho = max((len(str(c.value)) for c in columna if c.value is not None), default=0)
         ws_pz.column_dimensions[letra].width = min(ancho + 3, 75)
+
+# ============================================================
+# FORMATO HOJA ALERTA_PAGINA_MUNICIPIO
+# ============================================================
+
+if "ALERTA_PAGINA_MUNICIPIO" in wb.sheetnames:
+    ws_pm = wb["ALERTA_PAGINA_MUNICIPIO"]
+    ws_pm.freeze_panes = "A2"
+    ws_pm.auto_filter.ref = ws_pm.dimensions
+    ws_pm.sheet_view.showGridLines = False
+    for celda in ws_pm[1]:
+        celda.fill = PatternFill("solid", fgColor="548235")
+        celda.font = Font(color="FFFFFF", bold=True)
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+    for fila in ws_pm.iter_rows(min_row=2):
+        color = "FFF2CC" if fila[8].value == "VALIDAR_EN_MARCOPOLO" else "FCE4D6"
+        for celda in fila:
+            celda.fill = PatternFill("solid", fgColor=color)
+            celda.alignment = Alignment(vertical="center", wrap_text=True)
+    anchos = {"A": 15, "B": 14, "C": 20, "D": 23, "E": 55,
+              "F": 12, "G": 11, "H": 25, "I": 34, "J": 85}
+    for letra, ancho in anchos.items():
+        ws_pm.column_dimensions[letra].width = ancho
 
 # ============================================================
 # FORMATO HOJA ALERTA_ACTIVIDADES
@@ -3812,6 +4267,17 @@ if "MASIVAS" in wb.sheetnames:
                 bold=True
             )
 
+    col_pagina_mas = encabezados_mas.get("pagina")
+    col_alerta_mas = encabezados_mas.get("tipo_alerta")
+    if col_pagina_mas and col_alerta_mas:
+        amarillo_duplicada = PatternFill("solid", fgColor="FFD966")
+        for numero_fila in range(2, ws_mas.max_row + 1):
+            if ws_mas.cell(numero_fila, col_alerta_mas).value == "PAGINA_DUPLICADA":
+                for columna in (col_pagina_mas, col_alerta_mas):
+                    celda = ws_mas.cell(numero_fila, columna)
+                    celda.fill = amarillo_duplicada
+                    celda.font = Font(color="000000", bold=True)
+
     for columna in ws_mas.columns:
 
         max_length = 0
@@ -4198,6 +4664,12 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "debe revisar si la cantidad corresponde a la operación realizada o si "
         "requiere algún ajuste."
     )
+    agregar_texto_guia(
+        "Para los suministros 200092, 200093 y CALE1F se exige cantidad total "
+        "igual a 1 por pedido, subzona y actividad cuando aparecen en el TXT. "
+        "Si se registra 0, más de 1 o varias filas que suman un valor distinto "
+        "de 1, ALERTA_CANTIDADES muestra MATERIAL_CANTIDAD_DISTINTA_1."
+    )
 
     # 5. Rural/Urbano
     agregar_seccion_guia("5. Alerta Rural/Urbano")
@@ -4216,8 +4688,63 @@ if "GUIA_REGLAS" in wb.sheetnames:
     agregar_texto_guia(
         "La hoja ALERTA_PAGINA_7MO_DIGITO revisa las páginas que comienzan por 190. "
         "Si el séptimo dígito es 1, urbrur debe ser U (urbano); si es 2, "
-        "debe ser R (rural). Solo se genera alerta cuando figura la clasificación "
-        "opuesta: 1 con R o 2 con U."
+        "debe ser R (rural). Se genera alerta para 1 con R o 2 con U. "
+        "Si el séptimo dígito no es 1 ni 2, se solicita revisión en MARCOPOLO."
+    )
+    agregar_texto_guia(
+        "En esa misma hoja, toda página que comienza con un número entre 200 y "
+        "999 aparece en amarillo como VALIDAR_EN_MARCOPOLO. Puede ser un error "
+        "de digitación: el analista consulta la página en MARCOPOLO antes de "
+        "decidir si debe corregirse. También se indica si el séptimo dígito "
+        "no es 1 ni 2; solo esos dos valores están reconocidos. "
+        "Esta revisión aplica a cualquier actividad."
+    )
+    agregar_seccion_guia("5.1. Prefijos de página por municipio")
+    agregar_texto_guia(
+        "La hoja ALERTA_PAGINA_MUNICIPIO cruza el municipio, el inicio de la página "
+        "y la clasificación U (urbano) o R (rural) registrada en Fénix. "
+        "Si la clasificación no coincide con la siguiente tabla, muestra "
+        "INCONSISTENCIA_PAGINA_MUNICIPIO. Se conservan los ceros iniciales y "
+        "se compara el prefijo completo; en Caldas, 1901302 es rural."
+    )
+    agregar_texto_guia(
+        "La columna item_cont reúne en una sola celda las manos de obra "
+        "registradas como CON para ese pedido, subzona y página. Los códigos "
+        "se separan con comas y cada código aparece una sola vez."
+    )
+    nombres_municipios_guia = {
+        "MEDELLIN": "Medellín", "ITAGUI": "Itagüí", "ENVIGADO": "Envigado",
+        "LA ESTRELLA": "La Estrella", "SABANETA": "Sabaneta", "CALDAS": "Caldas",
+    }
+    agregar_tabla_guia(
+        ["Municipio", "Prefijos urbanos (U)", "Prefijos rurales (R)"],
+        [
+            [
+                nombres_municipios_guia[municipio],
+                ", ".join(reglas["U"]) or "Sin prefijos definidos",
+                ", ".join(reglas["R"]) or "Sin prefijos definidos",
+            ]
+            for municipio, reglas in PREFIJOS_PAGINA_MUNICIPIO.items()
+        ],
+    )
+    agregar_texto_guia(
+        "Los siguientes prefijos pueden corresponder a urbano o rural. "
+        "La hoja los marca como VALIDAR_EN_MARCOPOLO y el analista consulta "
+        "allí la clasificación correcta de la página."
+    )
+    agregar_tabla_guia(
+        ["Municipio", "Prefijos que requieren MARCOPOLO", "Qué hacer"],
+        [
+            [nombres_municipios_guia[municipio], ", ".join(reglas["MARCOPOLO"]),
+             "Consultar la página en MARCOPOLO antes de concluir si es U o R."]
+            for municipio, reglas in PREFIJOS_PAGINA_MUNICIPIO.items()
+            if reglas["MARCOPOLO"]
+        ],
+    )
+    agregar_texto_guia(
+        "Si una página no comienza por ninguno de los prefijos indicados para "
+        "su municipio, esta hoja no genera alerta porque no hay una clasificación "
+        "definida para ese caso."
     )
 
     # 6. Actividades
@@ -4251,6 +4778,8 @@ if "GUIA_REGLAS" in wb.sheetnames:
         [
             ["Suministros 215887 o 219404", "Para la actividad AEJDO, si alguno de estos suministros lleva cantidad, debe registrar cobro al usuario en vlr_cliente.", "COBRO_FALTANTE_AEJDO. Ejemplo: 215887 con cantidad mayor a 0 y vlr_cliente = 0 genera alerta."],
             ["A18U o A18R", "Debe llevar obligatoriamente el suministro 211357.", "REGLA_AEJDO_A18."],
+            ["A18U o A18R en AEJDO o INPRE", "Debe registrar A19U o A19R con la misma terminación, en el mismo pedido, subzona y actividad.", "REGLA_A18_REQUIERE_A19."],
+            ["A12U o A12R en AEJDO", "Debe llevar uno de los medidores 200092/200093 y ambos suministros 215887 y 219404. También debe llevar CALE1F.", "REGLA_AEJDO_A12_MATERIALES; la falta de CALE1F se señala en REGLA_AEJDO."],
             ["A02U o A02R", "Debe llevar A06U/R o A08U/R con la misma terminación. Uno de los dos es suficiente.", "REGLA_AEJDO_A02."],
             ["A10U o A10R", "Debe llevar A12U/R con la misma terminación.", "REGLA_AEJDO_A10."],
             ["A07U o A07R", "Debe llevar obligatoriamente el suministro 200384.", "REGLA_AEJDO_A07."],
@@ -4266,6 +4795,34 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "indica: El ítem A13 incluye la instalación del nuevo pase (anterior acometida).",
         negrita=True,
         altura=48,
+    )
+    agregar_texto_guia(
+        "Cruces de A22: ALERTA_ACTIVIDADES muestra urbrur y tipre junto a cada "
+        "alerta. Estas condiciones se revisan sobre la línea CON del ítem A22."
+    )
+    agregar_tabla_guia(
+        ["Actividad e ítem", "Condición encontrada", "Resultado"],
+        [
+            ["AEJDO · A22U", "Urbano; tipre distinto de ENESUB o ENEPIL.",
+             "A22U_TIPO_PREPAGO_NO_VALIDO: A22U solo es válido para esos dos tipos de prepago."],
+            ["DIPRE o DSPRE · A22U", "Urbano; tipre ENEPRE.",
+             "A22U_NO_VALIDO_ENEPRE: revisar el ítem, válido para ENESUB o ENEPIL."],
+            ["DIPRE o DSPRE · A22R", "Rural; tipre vacío.",
+             "OBSERVACION_A22R_POSTE: comprobar si el medidor está en poste; si no, cambiar el ítem."],
+        ],
+    )
+    agregar_texto_guia(
+        "En AEJDO, INPRE, DIPRE, REEQU y DSPRE, ALERTA_ACTIVIDADES indica "
+        "qué ítems corresponden a la zona rural o urbana según la tabla siguiente."
+    )
+    agregar_tabla_guia(
+        ["Zona e ítems encontrados", "Corrección indicada", "Tipo de alerta"],
+        [
+            ["Rural (R): A04R y A05R juntos", "Corregir por A06R.",
+             "CORREGIR_A04R_A05R_POR_A06R"],
+            ["Urbano (U): A06R", "Corregir por A04U y A05U.",
+             "CORREGIR_A06R_POR_A04U_A05U"],
+        ],
     )
 
     # 7. Legalizaciones sin cobro
@@ -4333,6 +4890,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "encontradas, se genera una alerta para revisión del analista."
     )
     agregar_texto_guia(
+        "Si una misma página completa figura en dos o más pedidos distintos de "
+        "la misma subzona, MASIVAS muestra PAGINA_DUPLICADA y resalta la página "
+        "en amarillo. Varias filas de una página dentro de un solo pedido no "
+        "se consideran duplicidad. Esta alerta aparece aunque el ítem C01-C04 "
+        "sí corresponda con la cantidad de instalaciones."
+    )
+    agregar_texto_guia(
         "Estas alertas facilitan la revisión, pero cada una debe ser validada por el "
         "analista, ya que el registro puede ser correcto aunque el sistema lo marque "
         "como una posible novedad.",
@@ -4342,21 +4906,58 @@ if "GUIA_REGLAS" in wb.sheetnames:
 
     # 10. Publicación
     agregar_seccion_guia("10. Publicación del informe en OneDrive")
+
     agregar_texto_guia(
-        "El archivo se comparte en OneDrive, dentro de la carpeta "
-        "Relación_MO_Vs_Materiales, en dos momentos del día."
+        "Los informes se guardan en OneDrive, dentro de la carpeta "
+        "Relación_MO_Vs_Materiales, organizados por mes y fecha de generación."
     )
+
+    agregar_texto_guia(
+        r"Ejemplo de ubicación: Relación_MO_Vs_Materiales\Octubre\26-10-2026"
+    )
+
+    agregar_texto_guia(
+        "Se publican dos cortes durante el día. Los archivos se identifican "
+        "según el período y el corte de la información."
+    )
+
     agregar_tabla_guia(
         ["Corte", "Información incluida", "Nombre del archivo"],
         [
-            ["Mañana, aproximadamente 6:00 a. m.", "Información digitada durante el día anterior.", "VALIDACION_MO_MATERIALES_ALMACEN_AAAA-MM-DD.xlsx"],
-            ["Tarde, aproximadamente 2:30 p. m.", "Información digitada durante el día actual hasta esa hora.", "INFORME_VALIDACION_MO_MATERIALES_ALMACEN_AAAA-MM-DD.xlsx"],
+            [
+                "Aproximadamente 10:00 a. m.",
+                "Acumulado del período de revisión hasta la hora del corte. "
+                "Las fechas del nombre indican el rango del exporte.",
+                "VALIDACION_MO_MATERIALES_ALMACEN DEL AAAA-MM-DD AL AAAA-MM-DD.xlsx",
+            ],
+            [
+                "Aproximadamente 2:30 p. m.",
+                "Información registrada durante el día actual hasta la hora del corte.",
+                "VALIDACION_MO_MATERIALES_ALMACEN_AAAA-MM-DD.xlsx",
+            ],
         ],
     )
+
     agregar_texto_guia(
-        "Ejemplo: el 22 de septiembre, el archivo de la mañana puede llamarse "
-        "VALIDACION_MO_MATERIALES_ALMACEN_2026-09-21.xlsx y el archivo de la tarde "
-        "INFORME_VALIDACION_MO_MATERIALES_ALMACEN_2026-09-22.xlsx."
+        "Ejemplos de nombres: "
+        "VALIDACION_MO_MATERIALES_ALMACEN DEL 2026-10-06 AL 2026-11-09.xlsx "
+        "para el acumulado del período, y "
+        "VALIDACION_MO_MATERIALES_ALMACEN_2026-10-26.xlsx "
+        "para el corte del día actual."
+    )
+
+    agregar_texto_guia(
+        "Se recomienda descargar una copia del archivo y trabajarla desde el "
+        "equipo, ya que otros analistas pueden estar utilizando el mismo informe "
+        "en OneDrive. Así se evita que los filtros o cambios de un usuario "
+        "interfieran con la revisión de los demás."
+    )
+
+    agregar_texto_guia(
+        "Cada analista debe filtrar su zona y revisar las alertas. "
+        "La validación final corresponde al analista, quien debe confirmar "
+        "si cada caso requiere una corrección o si la información registrada "
+        "es correcta."
     )
 
     fila_final_guia = estado_guia["fila"] - 1
