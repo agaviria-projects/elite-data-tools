@@ -1730,6 +1730,19 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - Si aparece A13U/R, debe existir A22U/R (o A022U/R)
 #     con la misma terminacion.
 #   - Si ambos estan presentes, cumple y no genera observacion.
+#   - En tipre ENEPRE se revisan combinaciones A13/A14 con A04/A05/A06.
+#   - En tipre ENEPRE, A13 junto con A22 genera alerta de cobro.
+#
+# AEJDO o DSPRE:
+#   - A02U/R junto con A07U/R requiere revisar autorizacion de interventoria.
+#   - A31U/R no puede combinarse con A02U/R ni con A07U/R.
+#
+# DIPRE:
+#   - El suministro 200098 no esta permitido.
+#
+# AEJDO:
+#   - B17 no debe combinarse con B01 o B02 de la misma terminacion,
+#     porque B17 incluye la instalacion de interruptores.
 #
 # A22: se cruza urbrur y tipre en AEJDO, DIPRE y DSPRE.
 # A04R/A05R y A06R: correcciones según urbrur en cinco actividades.
@@ -1917,6 +1930,85 @@ def validar_reglas_actividades(df_export_in):
                     "A04U y A05U.",
                     no_permitidos=["A06R"], urbrur_valor="U",
                 )
+
+        # Reglas de combinación para A02, A07 y A31 en AEJDO o DSPRE.
+        # Se compara la base para reconocer U o R y se conservan los códigos
+        # exactos encontrados para facilitar la revisión del analista.
+        if actividad in {"AEJDO", "DSPRE"}:
+            items_autorizacion = sorted(
+                item for item in items_cont
+                if item[:-1] in {"A02", "A07", "A31"}
+                and item[-1:] in {"U", "R"}
+            )
+            conjuntos_por_terminacion = {
+                terminacion: {
+                    item for item in items_autorizacion
+                    if item.endswith(terminacion)
+                }
+                for terminacion in ("U", "R")
+            }
+
+            # A31 junto con A02 o A07, con la misma terminación U/R, es una
+            # combinación incorrecta. Si aparecen los tres, esta alerta tiene
+            # prioridad sobre la revisión de autorización.
+            items_error_a31 = sorted({
+                item
+                for terminacion, items_zona in conjuntos_por_terminacion.items()
+                if f"A31{terminacion}" in items_zona
+                and (
+                    f"A02{terminacion}" in items_zona
+                    or f"A07{terminacion}" in items_zona
+                )
+                for item in items_zona
+                if item in {
+                    f"A31{terminacion}",
+                    f"A02{terminacion}",
+                    f"A07{terminacion}",
+                }
+            })
+            items_revision = []
+            if items_error_a31:
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "ERROR_COMBINACION_ITEMS_A31",
+                    items_error_a31, [],
+                    "Error: los ítems "
+                    + ", ".join(items_error_a31)
+                    + " no pueden combinarse.",
+                    no_permitidos=items_error_a31,
+                )
+
+            # A02 junto con A07, con la misma terminación U/R, requiere revisar
+            # la autorización, pero no se registra como error automático.
+            else:
+                items_revision = sorted({
+                    item
+                    for terminacion, items_zona in conjuntos_por_terminacion.items()
+                    if {
+                        f"A02{terminacion}", f"A07{terminacion}"
+                    }.issubset(items_zona)
+                    for item in (
+                        f"A02{terminacion}", f"A07{terminacion}"
+                    )
+                })
+
+            if items_revision:
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "REVISAR_AUTORIZACION_INTERVENTORIA",
+                    items_revision, [],
+                    "Revisar autorización de interventoría.",
+                )
+
+        # DIPRE no debe registrar el suministro 200098.
+        if actividad == "DIPRE" and "200098" in suministros:
+            agregar_alerta_actividad(
+                pedido, subzona, actividad,
+                "ITEM_200098_NO_PERMITIDO_DIPRE",
+                ["200098"], [],
+                "No debe tener ítem 200098.",
+                no_permitidos=["200098"],
+            )
 
         # A22 se revisa solo sobre la línea de mano de obra. Las tres
         # condiciones usan el valor de urbrur y tipre de esa misma línea.
@@ -2270,6 +2362,26 @@ def validar_reglas_actividades(df_export_in):
 
         elif actividad == "AEJDO":
 
+            # B17 incluye la instalación de interruptores. Por eso no debe
+            # combinarse con B01 ni B02 de la misma terminación U/R.
+            for terminacion in ("U", "R"):
+                b17 = f"B17{terminacion}"
+                interruptores_adicionales = sorted(
+                    items_cont & {f"B01{terminacion}", f"B02{terminacion}"}
+                )
+                if b17 in items_cont and interruptores_adicionales:
+                    encontrados_b17 = [b17] + interruptores_adicionales
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad,
+                        "B17_INCLUYE_INSTALACION_INTERRUPTORES",
+                        encontrados_b17, [],
+                        f"El ítem {b17} incluye la instalación de interruptores; "
+                        "no debe combinarse con "
+                        + " o ".join(interruptores_adicionales)
+                        + ".",
+                        no_permitidos=interruptores_adicionales,
+                    )
+
             # A12 es una mano de obra y se busca en item_cont.
             # CALE1F es un suministro y se busca en item_res.
             # La regla solo genera alerta cuando aparece uno de
@@ -2452,6 +2564,55 @@ def validar_reglas_actividades(df_export_in):
         # ====================================================
 
         elif actividad == "DSPRE":
+
+            tipres_grupo = {
+                valor for valor in grupo["tipre"] if valor
+            }
+
+            # Reglas exclusivas de DSPRE con tipre ENEPRE.
+            if "ENEPRE" in tipres_grupo:
+                for terminacion in ("U", "R"):
+                    a04 = f"A04{terminacion}"
+                    a05 = f"A05{terminacion}"
+                    a06 = f"A06{terminacion}"
+                    a13 = f"A13{terminacion}"
+                    a14 = f"A14{terminacion}"
+
+                    combinaciones_incorrectas = [
+                        (a13, a04, f"{a06} + {a13}"),
+                        (a13, a05, f"{a06} + {a13}"),
+                        (a14, a06, f"{a04} o {a05} + {a14}"),
+                    ]
+                    for primero, segundo, combinacion_correcta in combinaciones_incorrectas:
+                        if {primero, segundo}.issubset(items_cont):
+                            agregar_alerta_actividad(
+                                pedido, subzona, actividad,
+                                "COMBINACION_ITEMS_INCORRECTA_ENEPRE",
+                                [primero, segundo], [],
+                                f"Combinación de ítems incorrecta: {primero} + "
+                                f"{segundo}. La combinación correcta debe ser "
+                                f"{combinacion_correcta}.",
+                                no_permitidos=[primero, segundo],
+                                tipre_valor="ENEPRE",
+                            )
+
+                    alternativas_a22_cobro = {
+                        f"A22{terminacion}", f"A022{terminacion}"
+                    }
+                    a22_cobro_encontrados = sorted(
+                        items_cont & alternativas_a22_cobro
+                    )
+                    if a13 in items_cont and a22_cobro_encontrados:
+                        encontrados_cobro = [a13] + a22_cobro_encontrados
+                        agregar_alerta_actividad(
+                            pedido, subzona, actividad,
+                            "COBRO_INCORRECTO_NUEVO_PASE_ENEPRE",
+                            encontrados_cobro, [],
+                            "Cobro incorrecto: verificar si se instala cable "
+                            "para nuevo pase.",
+                            no_permitidos=encontrados_cobro,
+                            tipre_valor="ENEPRE",
+                        )
 
             for terminacion in ("U", "R"):
                 alternativas_a22 = {
@@ -4786,6 +4947,58 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["Suministro 200092", "Debe llevar 200410 o 200492. Uno de los dos es suficiente.", "REGLA_AEJDO_200092."],
             ["Suministro 200093", "Debe llevar 200411, 200493 o 323739. Uno de los tres es suficiente.", "REGLA_AEJDO_200093."],
             ["A32U o A32R", "Debe llevar obligatoriamente los dos suministros: 200151A y 211319A.", "REGLA_AEJDO_A32."],
+        ],
+    )
+    agregar_texto_guia(
+        "Reglas adicionales agrupadas en ALERTA_ACTIVIDADES: estas validaciones "
+        "revisan combinaciones que no deben coexistir o condiciones particulares "
+        "de AEJDO, DSPRE y DIPRE.",
+        negrita=True,
+        altura=30,
+    )
+    agregar_tabla_guia(
+        ["Actividad y condición", "Regla aplicada", "Alerta generada"],
+        [
+            [
+                "AEJDO o DSPRE: A02U/R junto con A07U/R",
+                "La combinación requiere validar la autorización de interventoría. Se reconocen las terminaciones urbana y rural.",
+                "REVISAR_AUTORIZACION_INTERVENTORIA: Revisar autorización de interventoría.",
+            ],
+            [
+                "AEJDO o DSPRE: A31U/R junto con A02U/R o A07U/R",
+                "A31 no puede combinarse con A02 ni con A07 en el mismo pedido. La validación conserva los códigos U/R exactos encontrados.",
+                "ERROR_COMBINACION_ITEMS_A31: Error, no pueden combinarse.",
+            ],
+            [
+                "DIPRE: suministro 200098",
+                "La actividad DIPRE no debe tener el suministro 200098.",
+                "ITEM_200098_NO_PERMITIDO_DIPRE: No debe tener ítem 200098.",
+            ],
+            [
+                "AEJDO: B17U/R junto con B01U/R o B02U/R",
+                "B17 incluye la instalación de interruptores; por eso no debe combinarse con B01 o B02 de la misma terminación U/R.",
+                "B17_INCLUYE_INSTALACION_INTERRUPTORES.",
+            ],
+        ],
+    )
+    agregar_texto_guia(
+        "Reglas de DSPRE con tipre ENEPRE: la terminación debe coincidir. Por "
+        "ejemplo, una regla urbana compara códigos terminados en U y una regla "
+        "rural compara códigos terminados en R.",
+        negrita=True,
+        altura=30,
+    )
+    agregar_tabla_guia(
+        ["Combinación encontrada", "Combinación correcta", "Alerta generada"],
+        [
+            ["A13U/R + A04U/R", "A06U/R + A13U/R", "COMBINACION_ITEMS_INCORRECTA_ENEPRE"],
+            ["A13U/R + A05U/R", "A06U/R + A13U/R", "COMBINACION_ITEMS_INCORRECTA_ENEPRE"],
+            ["A14U/R + A06U/R", "A04U/R o A05U/R + A14U/R", "COMBINACION_ITEMS_INCORRECTA_ENEPRE"],
+            [
+                "A13U/R + A22U/R (también reconoce A022U/R)",
+                "Verificar si se instala cable para nuevo pase.",
+                "COBRO_INCORRECTO_NUEVO_PASE_ENEPRE",
+            ],
         ],
     )
     agregar_texto_guia(

@@ -1,7 +1,9 @@
 import ttkbootstrap as ttk
 
+import threading
+from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 from ui.base_view import crear_vista
 from utils.executor import ejecutar_secuencia
@@ -261,7 +263,7 @@ def crear_validacion_materiales(panel):
 
     acciones.pack(fill="x", pady=(20, 15))
 
-    ttk.Button(
+    boton_validar = ttk.Button(
 
         acciones,
 
@@ -275,7 +277,72 @@ def crear_validacion_materiales(panel):
 
         command=ejecutar_validacion
 
-    ).pack(pady=10)
+    )
+
+    boton_validar.pack(pady=(4, 12))
+
+    # ------------------------------------------------------
+    # GENERACIÓN DE CORREOS
+    # ------------------------------------------------------
+
+    frm_correo = ttk.Frame(acciones)
+    frm_correo.pack(fill="x")
+
+    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
+    fecha_inicial = ttk.StringVar(value=fecha_hoy)
+    fecha_final = ttk.StringVar(value=fecha_hoy)
+    modo_correo = ttk.StringVar(value="Modo revisión")
+
+    ttk.Label(frm_correo, text="Fecha inicial:").grid(
+        row=0, column=0, padx=(0, 6), pady=4, sticky="w"
+    )
+    ttk.Entry(frm_correo, textvariable=fecha_inicial, width=14).grid(
+        row=0, column=1, padx=(0, 18), pady=4
+    )
+    ttk.Label(frm_correo, text="Fecha final:").grid(
+        row=0, column=2, padx=(0, 6), pady=4, sticky="w"
+    )
+    ttk.Entry(frm_correo, textvariable=fecha_final, width=14).grid(
+        row=0, column=3, padx=(0, 18), pady=4
+    )
+    ttk.Label(frm_correo, text="Modo:").grid(
+        row=0, column=4, padx=(0, 6), pady=4, sticky="w"
+    )
+    ttk.Combobox(
+        frm_correo,
+        textvariable=modo_correo,
+        values=["Modo revisión", "Envío automático"],
+        state="readonly",
+        width=19,
+    ).grid(row=0, column=5, padx=(0, 18), pady=4)
+    ttk.Label(frm_correo, text="Adjuntos:").grid(
+        row=0, column=6, padx=(0, 6), pady=4, sticky="w"
+    )
+    ttk.Label(
+        frm_correo,
+        text="Todos",
+        width=10,
+        anchor="center",
+        bootstyle="inverse-secondary",
+    ).grid(row=0, column=7, padx=(0, 18), pady=4)
+
+    boton_correo = ttk.Button(
+        frm_correo,
+        text="✉ Generar correos",
+        width=23,
+        bootstyle="info",
+        cursor="hand2",
+    )
+    boton_correo.grid(row=0, column=8, pady=4)
+
+    ttk.Label(
+        acciones,
+        text=(
+            "Modo revisión abre el mensaje en Outlook sin enviarlo. "
+            "Las fechas corresponden al rango digitado en la extracción de Fénix."
+        ),
+        bootstyle="secondary",
+    ).pack(anchor="w", pady=(8, 0))
 
     # ------------------------------------------------------
 
@@ -322,3 +389,98 @@ def crear_validacion_materiales(panel):
         "Esperando ejecución...\n"
 
     )
+
+    def escribir_correo(mensaje):
+        def actualizar():
+            txt_consola.insert("end", mensaje + "\n")
+            txt_consola.see("end")
+        vista.after(0, actualizar)
+
+    def validar_fecha(texto):
+        try:
+            datetime.strptime(texto.strip(), "%d/%m/%Y")
+            return True
+        except ValueError:
+            return False
+
+    def ejecutar_correo(inicial, final, automatico):
+        try:
+            import pythoncom
+            from modules.correo_validacion_materiales import (
+                buscar_informe_mas_reciente,
+                crear_correo_outlook,
+                generar_adjuntos_por_hoja,
+            )
+
+            pythoncom.CoInitialize()
+            try:
+                escribir_correo("📂 Buscando el informe más reciente...")
+                informe = buscar_informe_mas_reciente(proyecto_actual)
+                escribir_correo(f"📄 Informe: {informe.name}")
+                escribir_correo("📎 Generando libros separados por hoja...")
+                adjuntos = generar_adjuntos_por_hoja(informe)
+                escribir_correo(f"✅ Adjuntos generados: {len(adjuntos)}")
+                crear_correo_outlook(
+                    inicial,
+                    final,
+                    adjuntos,
+                    enviar_automaticamente=automatico,
+                )
+                if automatico:
+                    escribir_correo("✅ Correo enviado automáticamente.")
+                else:
+                    escribir_correo(
+                        "✅ Correo abierto en Outlook para revisión."
+                    )
+            finally:
+                pythoncom.CoUninitialize()
+        except Exception as error:
+            escribir_correo(f"❌ ERROR: {error}")
+            vista.after(
+                0,
+                lambda: messagebox.showerror(
+                    "Error al generar correo", str(error)
+                ),
+            )
+        finally:
+            vista.after(0, lambda: boton_correo.configure(state="normal"))
+
+    def iniciar_correo():
+        inicial = fecha_inicial.get().strip()
+        final = fecha_final.get().strip()
+        if not validar_fecha(inicial) or not validar_fecha(final):
+            messagebox.showerror(
+                "Fechas no válidas",
+                "Ingrese ambas fechas con el formato DD/MM/AAAA.",
+            )
+            return
+
+        automatico = modo_correo.get() == "Envío automático"
+        if automatico:
+            continuar = messagebox.askyesno(
+                "Confirmar envío automático",
+                (
+                    "El correo se enviará directamente y no se abrirá "
+                    "para revisión.\n\n"
+                    f"Período: {inicial} al {final}\n"
+                    "Adjuntos: todas las hojas de resultados\n\n"
+                    "¿Desea continuar?"
+                ),
+                icon="warning",
+            )
+            if not continuar:
+                return
+
+        txt_consola.delete("1.0", "end")
+        escribir_correo(
+            f"📌 Período del correo: {inicial} al {final}"
+        )
+        escribir_correo(f"📨 Modo: {modo_correo.get()}")
+        boton_correo.configure(state="disabled")
+        threading.Thread(
+            target=ejecutar_correo,
+            args=(inicial, final, automatico),
+            daemon=True,
+        ).start()
+
+    boton_correo.configure(command=iniciar_correo)
