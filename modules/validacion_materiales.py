@@ -292,6 +292,7 @@ def crear_validacion_materiales(panel):
     fecha_inicial = ttk.StringVar(value=fecha_hoy)
     fecha_final = ttk.StringVar(value=fecha_hoy)
     modo_correo = ttk.StringVar(value="Modo revisión")
+    modalidad_adjuntos = ttk.StringVar(value="Libro completo")
 
     ttk.Label(frm_correo, text="Fecha inicial:").grid(
         row=0, column=0, padx=(0, 6), pady=4, sticky="w"
@@ -318,12 +319,12 @@ def crear_validacion_materiales(panel):
     ttk.Label(frm_correo, text="Adjuntos:").grid(
         row=0, column=6, padx=(0, 6), pady=4, sticky="w"
     )
-    ttk.Label(
+    ttk.Combobox(
         frm_correo,
-        text="Todos",
-        width=10,
-        anchor="center",
-        bootstyle="inverse-secondary",
+        textvariable=modalidad_adjuntos,
+        values=["Libro completo", "Separados por hojas"],
+        state="readonly",
+        width=20,
     ).grid(row=0, column=7, padx=(0, 18), pady=4)
 
     boton_correo = ttk.Button(
@@ -403,7 +404,7 @@ def crear_validacion_materiales(panel):
         except ValueError:
             return False
 
-    def ejecutar_correo(inicial, final, automatico):
+    def ejecutar_correo(inicial, final, automatico, presentacion):
         try:
             import pythoncom
             from modules.correo_validacion_materiales import (
@@ -417,14 +418,21 @@ def crear_validacion_materiales(panel):
                 escribir_correo("📂 Buscando el informe más reciente...")
                 informe = buscar_informe_mas_reciente(proyecto_actual)
                 escribir_correo(f"📄 Informe: {informe.name}")
-                escribir_correo("📎 Generando libros separados por hoja...")
-                adjuntos = generar_adjuntos_por_hoja(informe)
-                escribir_correo(f"✅ Adjuntos generados: {len(adjuntos)}")
+                if presentacion == "Separados por hojas":
+                    escribir_correo(
+                        "📎 Generando archivos separados por hoja..."
+                    )
+                    adjuntos = generar_adjuntos_por_hoja(informe)
+                else:
+                    escribir_correo("📎 Adjuntando el libro completo...")
+                    adjuntos = [informe]
+                escribir_correo(f"✅ Adjuntos preparados: {len(adjuntos)}")
                 crear_correo_outlook(
                     inicial,
                     final,
                     adjuntos,
                     enviar_automaticamente=automatico,
+                    modalidad_adjuntos=presentacion,
                 )
                 if automatico:
                     escribir_correo("✅ Correo enviado automáticamente.")
@@ -456,6 +464,7 @@ def crear_validacion_materiales(panel):
             return
 
         automatico = modo_correo.get() == "Envío automático"
+        presentacion = modalidad_adjuntos.get()
         if automatico:
             continuar = messagebox.askyesno(
                 "Confirmar envío automático",
@@ -463,7 +472,7 @@ def crear_validacion_materiales(panel):
                     "El correo se enviará directamente y no se abrirá "
                     "para revisión.\n\n"
                     f"Período: {inicial} al {final}\n"
-                    "Adjuntos: todas las hojas de resultados\n\n"
+                    f"Presentación: {presentacion}\n\n"
                     "¿Desea continuar?"
                 ),
                 icon="warning",
@@ -476,10 +485,11 @@ def crear_validacion_materiales(panel):
             f"📌 Período del correo: {inicial} al {final}"
         )
         escribir_correo(f"📨 Modo: {modo_correo.get()}")
+        escribir_correo(f"📎 Presentación: {presentacion}")
         boton_correo.configure(state="disabled")
         threading.Thread(
             target=ejecutar_correo,
-            args=(inicial, final, automatico),
+            args=(inicial, final, automatico, presentacion),
             daemon=True,
         ).start()
 

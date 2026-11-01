@@ -93,12 +93,25 @@ def construir_html(
     fecha_inicial: str,
     fecha_final: str,
     cantidad_adjuntos: int,
+    modalidad_adjuntos: str = "Libro completo",
 ) -> str:
     """Construye un cuerpo HTML compacto y compatible con Outlook."""
 
     inicial = html.escape(fecha_inicial)
     final = html.escape(fecha_final)
+    modalidad = html.escape(modalidad_adjuntos)
     generado = datetime.now().strftime("%d/%m/%Y %I:%M %p")
+
+    if modalidad_adjuntos == "Separados por hojas":
+        descripcion_adjuntos = (
+            "Cada archivo contiene una hoja de resultados y la hoja "
+            "<b>GUIA_REGLAS</b> para facilitar su consulta."
+        )
+    else:
+        descripcion_adjuntos = (
+            "El archivo adjunto contiene el libro completo con la hoja "
+            "<b>GUIA_REGLAS</b> y todas las hojas de resultados."
+        )
 
     return f"""
     <html><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;">
@@ -115,11 +128,12 @@ def construir_html(
             <td style="padding:6px 12px;color:#00995c;"><b>Completada</b></td></tr>
         <tr><td style="padding:6px 12px;background:#eef7f1;"><b>Adjuntos</b></td>
             <td style="padding:6px 12px;">{cantidad_adjuntos}</td></tr>
+        <tr><td style="padding:6px 12px;background:#eef7f1;"><b>Presentación</b></td>
+            <td style="padding:6px 12px;">{modalidad}</td></tr>
         <tr><td style="padding:6px 12px;background:#eef7f1;"><b>Generación</b></td>
             <td style="padding:6px 12px;">{generado}</td></tr>
       </table>
-      <p>Cada archivo contiene una hoja de resultados y la hoja
-      <b>GUIA_REGLAS</b> para facilitar su consulta.</p>
+      <p>{descripcion_adjuntos}</p>
       <p style="background:#fff2cc;padding:10px;border-left:4px solid #f0ad00;">
       Las alertas orientan la revisión, pero deben ser validadas por el analista
       de acuerdo con la operación y las reglas de negocio vigentes.</p>
@@ -166,6 +180,7 @@ def crear_correo_outlook(
     fecha_final: str,
     adjuntos: list[Path],
     enviar_automaticamente: bool = False,
+    modalidad_adjuntos: str = "Libro completo",
 ) -> None:
     """Abre el correo para revisión o lo envía mediante Outlook Desktop."""
 
@@ -181,7 +196,10 @@ def crear_correo_outlook(
     )
     correo.Importance = 1
     correo.HTMLBody = construir_html(
-        fecha_inicial, fecha_final, len(adjuntos)
+        fecha_inicial,
+        fecha_final,
+        len(adjuntos),
+        modalidad_adjuntos,
     )
 
     for adjunto in adjuntos:
