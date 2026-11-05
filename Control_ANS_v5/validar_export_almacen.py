@@ -1699,10 +1699,11 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - Debe tener D04U o D04R
 #   - Debe tener D02U o D02R
 #   - Debe tener D03U o D03R
-#   - Cualquier otro D genera alerta
+#   - Cualquier otro código D genera alerta
 #
 # ACREV:
-#   - Debe tener D01U Y D01R
+#   - Debe tener D01U o D01R, según corresponda
+#   - La cantidad total de D01U o D01R no puede ser mayor a 1
 #   - Cualquier otro D genera alerta
 #
 # ACAMN y ALECA:
@@ -1720,6 +1721,9 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - Si 215887 o 219404 (incluidas sus variantes /P) están marcados con
 #     cobro=SI, se genera alerta. Los suministros se leen desde la columna
 #     suminis (S) y, por compatibilidad, también desde item_res.
+#
+# AEJDO, ACAMN, ALECA, ALEGA y ALEGN:
+#   - C01U/R y A12U/R no pueden coexistir en el mismo pedido.
 #
 # AEJDO:
 #   - Regla bidireccional entre A12U/A12R y CALE1F:
@@ -1746,8 +1750,13 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - En tipre ENEPRE, A13 junto con A22 genera alerta de cobro.
 #
 # AEJDO o DSPRE:
-#   - A02U/R junto con A07U/R requiere revisar autorizacion de interventoria.
-#   - A31U/R no puede combinarse con A02U/R ni con A07U/R.
+#   - La regla reconoce las terminaciones U, R, UA y RA. La A final
+#     identifica que el item no lleva cobro al usuario.
+#   - A02 con cantidad mayor a 1 genera alerta.
+#   - A02 junto con A07, con la misma terminacion exacta U, R, UA o RA,
+#     requiere revisar autorizacion de interventoria.
+#   - A31 puede combinarse con A02, pero no puede combinarse con A07
+#     cuando tienen la misma terminacion exacta.
 #
 # DIPRE:
 #   - El suministro 200098 no esta permitido.
@@ -1758,7 +1767,15 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - B17 no debe combinarse con B01 o B02 de la misma terminacion,
 #     porque B17 incluye la instalacion de interruptores.
 #
+# TODAS LAS ACTIVIDADES, REVISIÓN POR PEDIDO:
+#   - Dos o más códigos diferentes entre A03U/R, A04U/R, A06U/R,
+#     A07U/R y A08U/R en el mismo pedido generan inconsistencia.
+#   - Las combinaciones A02U/R + A03U/R, A02U/R + A02U/R y
+#     A03U/R + A03U/R en el mismo pedido son incorrectas.
+#   - A03U/R es exclusivo para las actividades DSPRE y REEQU.
+#
 # A22: se cruza urbrur y tipre en AEJDO y DSPRE.
+# AEJDO, DSPRE e INPRE: entre A22U/R y A23U/R solo puede existir un ítem.
 # A04R/A05R y A06R: correcciones según urbrur en cinco actividades.
 # ============================================================
 
@@ -1888,6 +1905,105 @@ def validar_reglas_actividades(df_export_in):
             "detalle": detalle,
         })
 
+    # ====================================================
+    # REGLAS GENERALES POR PEDIDO (TODAS LAS ACTIVIDADES)
+    # ====================================================
+    # Se revisan únicamente códigos U/R de mano de obra. La agrupación se
+    # realiza por pedido para detectar combinaciones aunque los ítems estén
+    # registrados en actividades diferentes.
+    df_mo_todas_actividades = df.copy()
+    if "tipo" in df_mo_todas_actividades.columns:
+        df_mo_todas_actividades = df_mo_todas_actividades[
+            df_mo_todas_actividades["tipo"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .eq("CON")
+        ]
+
+    codigos_regla_19 = {
+        "A03U", "A03R",
+        "A04U", "A04R",
+        "A06U", "A06R",
+        "A07U", "A07R",
+        "A08U", "A08R",
+    }
+    codigos_a02 = {"A02U", "A02R"}
+    codigos_a03 = {"A03U", "A03R"}
+
+    for pedido_general, grupo_pedido in df_mo_todas_actividades.groupby(
+        "pedido"
+    ):
+        items_pedido = {
+            item for item in grupo_pedido["item_cont"] if item
+        }
+        subzonas_pedido = sorted({
+            subzona for subzona in grupo_pedido["subz"] if subzona
+        })
+        actividades_pedido = sorted({
+            actividad for actividad in grupo_pedido["actividad"] if actividad
+        })
+        subzona_salida = ", ".join(subzonas_pedido)
+        actividad_salida = ", ".join(actividades_pedido)
+
+        # Regla 19: dos o más ítems diferentes del grupo en el mismo pedido.
+        encontrados_regla_19 = sorted(items_pedido & codigos_regla_19)
+        if len(encontrados_regla_19) >= 2:
+            agregar_alerta_actividad(
+                pedido_general,
+                subzona_salida,
+                actividad_salida,
+                "COMBINACION_ITEMS_A03_A08_INCONSISTENTE",
+                encontrados_regla_19,
+                [],
+                "Dos o más de estos ítems en el mismo pedido es una "
+                "inconsistencia.",
+                no_permitidos=encontrados_regla_19,
+            )
+
+        # Regla 20: son incorrectas las combinaciones A02+A03, A02+A02
+        # y A03+A03 dentro del mismo pedido. Una repetición se reconoce
+        # tanto por varias filas como por una cantidad total mayor a 1.
+        filas_a02 = grupo_pedido[
+            grupo_pedido["item_cont"].isin(codigos_a02)
+        ]
+        filas_a03 = grupo_pedido[
+            grupo_pedido["item_cont"].isin(codigos_a03)
+        ]
+        encontrados_a02 = sorted(set(filas_a02["item_cont"]))
+        encontrados_a03 = sorted(set(filas_a03["item_cont"]))
+        cantidad_total_a02 = sum(
+            convertir_numero(valor) for valor in filas_a02["cantidad"]
+        )
+        cantidad_total_a03 = sum(
+            convertir_numero(valor) for valor in filas_a03["cantidad"]
+        )
+
+        combinaciones_incorrectas = []
+        if encontrados_a02 and encontrados_a03:
+            combinaciones_incorrectas.append("A02 + A03")
+        if len(filas_a02) >= 2 or cantidad_total_a02 > 1:
+            combinaciones_incorrectas.append("A02 + A02")
+        if len(filas_a03) >= 2 or cantidad_total_a03 > 1:
+            combinaciones_incorrectas.append("A03 + A03")
+
+        if combinaciones_incorrectas:
+            items_regla_20 = encontrados_a02 + encontrados_a03
+            agregar_alerta_actividad(
+                pedido_general,
+                subzona_salida,
+                actividad_salida,
+                "COMBINACION_A02_A03_INCORRECTA",
+                items_regla_20,
+                [],
+                "La combinación de ítems es incorrecta. Revisar planilla. "
+                "Combinación encontrada: "
+                + ", ".join(combinaciones_incorrectas)
+                + ".",
+                no_permitidos=items_regla_20,
+            )
+
     for (pedido, subzona, actividad), grupo in df.groupby(
         ["pedido", "subz", "actividad"]
     ):
@@ -1910,6 +2026,98 @@ def validar_reglas_actividades(df_export_in):
         # Conjunto unificado de suministros. Evita depender de que el
         # exporte replique el codigo en item_res y en suminis.
         suministros = items_res | items_suminis
+
+        # ====================================================
+        # REGLA 21: A03 ES EXCLUSIVO PARA DSPRE Y REEQU
+        # ====================================================
+        if actividad not in {"DSPRE", "REEQU"}:
+            items_a03_no_permitidos = sorted(
+                items_cont & {"A03U", "A03R"}
+            )
+            if items_a03_no_permitidos:
+                agregar_alerta_actividad(
+                    pedido,
+                    subzona,
+                    actividad,
+                    "A03_ACTIVIDAD_NO_PERMITIDA",
+                    items_a03_no_permitidos,
+                    ["actividad DSPRE o REEQU"],
+                    "El ítem A03 es exclusivo para las actividades DSPRE y "
+                    "REEQU.",
+                    no_permitidos=items_a03_no_permitidos,
+                )
+
+        # ====================================================
+        # A22 / A23: SOLO PUEDE EXISTIR UNO DE LOS DOS
+        # Aplica a AEJDO, DSPRE e INPRE. También detecta una sola
+        # línea con cantidad mayor a 1 o varias líneas repetidas.
+        # ====================================================
+        if actividad in {"AEJDO", "DSPRE", "INPRE"}:
+            codigos_a22_a23 = {"A22U", "A22R", "A23U", "A23R"}
+            filas_a22_a23 = grupo[
+                grupo["item_cont"].isin(codigos_a22_a23)
+            ].copy()
+            if "tipo" in filas_a22_a23.columns:
+                filas_a22_a23 = filas_a22_a23[
+                    filas_a22_a23["tipo"].fillna("").astype(str)
+                    .str.upper().str.strip().eq("CON")
+                ]
+
+            # No usar Series.map(...).sum() sobre ArrowStringArray: pandas
+            # puede conservar el dtype texto y concatenar valores ("1" +
+            # "1" = "11") en vez de sumarlos. La suma generadora garantiza
+            # que el resultado sea siempre numerico.
+            cantidad_total_a22_a23 = sum(
+                convertir_numero(valor)
+                for valor in filas_a22_a23["cantidad"]
+            )
+            hay_repeticion_o_combinacion = (
+                len(filas_a22_a23) > 1
+                or cantidad_total_a22_a23 > 1
+            )
+
+            if hay_repeticion_o_combinacion:
+                cantidades_por_codigo = {
+                    codigo: sum(
+                        convertir_numero(valor)
+                        for valor in filas_codigo["cantidad"]
+                    )
+                    for codigo, filas_codigo
+                    in filas_a22_a23.groupby("item_cont")
+                }
+                detalle_cantidades = ", ".join(
+                    f"{codigo}={cantidad:g}"
+                    for codigo, cantidad
+                    in sorted(cantidades_por_codigo.items())
+                )
+                encontrados_a22_a23 = sorted(cantidades_por_codigo)
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "A22_A23_REPETIDOS_O_COMBINADOS",
+                    encontrados_a22_a23, [],
+                    "Por ningún motivo se deben repetir o combinar los ítems "
+                    "A22 y A23; solo debe existir uno de los dos. "
+                    f"Cantidad encontrada: {detalle_cantidades}.",
+                    no_permitidos=encontrados_a22_a23,
+                )
+
+        # ====================================================
+        # C01 / A12: NO PUEDEN COEXISTIR
+        # Aplica a AEJDO, ACAMN, ALECA, ALEGA y ALEGN.
+        # ====================================================
+        if actividad in {"AEJDO", "ACAMN", "ALECA", "ALEGA", "ALEGN"}:
+            items_c01 = sorted(items_cont & {"C01U", "C01R"})
+            items_a12 = sorted(items_cont & {"A12U", "A12R"})
+            if items_c01 and items_a12:
+                combinacion_c01_a12 = items_c01 + items_a12
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "COMBINACION_C01_A12_NO_PERMITIDA",
+                    combinacion_c01_a12, [],
+                    "Solo se puede relacionar uno de los dos ítems: C01U/R "
+                    "o A12U/R. No deben registrarse ambos en el mismo pedido.",
+                    no_permitidos=combinacion_c01_a12,
+                )
 
         # ====================================================
         # LEGALIZACIONES: 215887/219404 NO DEBEN LLEVAR COBRO
@@ -2015,66 +2223,100 @@ def validar_reglas_actividades(df_export_in):
                     no_permitidos=["A06R"], urbrur_valor="U",
                 )
 
-        # Reglas de combinación para A02, A07 y A31 en AEJDO o DSPRE.
-        # Se compara la base para reconocer U o R y se conservan los códigos
-        # exactos encontrados para facilitar la revisión del analista.
+        # Reglas de cantidad y combinación para A02, A07 y A31 en AEJDO o
+        # DSPRE. Se reconocen U/R con o sin A final; la A final identifica
+        # que el ítem no lleva cobro al usuario.
         if actividad in {"AEJDO", "DSPRE"}:
+            codigos_regla_gabinetes = {
+                "A02U", "A02R", "A02UA", "A02RA",
+                "A07U", "A07R", "A07UA", "A07RA",
+                "A31U", "A31R", "A31UA", "A31RA",
+            }
             items_autorizacion = sorted(
                 item for item in items_cont
-                if item[:-1] in {"A02", "A07", "A31"}
-                and item[-1:] in {"U", "R"}
+                if item in codigos_regla_gabinetes
             )
+
+            # Se agrupan por terminación exacta para validar por separado
+            # las familias U/R y UA/RA. No se mezclan códigos con A final
+            # y sin A final dentro de una misma combinación.
             conjuntos_por_terminacion = {
                 terminacion: {
                     item for item in items_autorizacion
-                    if item.endswith(terminacion)
+                    if item in {
+                        f"A02{terminacion}",
+                        f"A07{terminacion}",
+                        f"A31{terminacion}",
+                    }
                 }
-                for terminacion in ("U", "R")
+                for terminacion in ("U", "R", "UA", "RA")
             }
 
-            # A31 junto con A02 o A07, con la misma terminación U/R, es una
-            # combinación incorrecta. Si aparecen los tres, esta alerta tiene
-            # prioridad sobre la revisión de autorización.
-            items_error_a31 = sorted({
+            # A02, con o sin A final, no debe registrar cantidad mayor a 1.
+            filas_a02 = grupo[
+                grupo["item_cont"].isin(
+                    {"A02U", "A02R", "A02UA", "A02RA"}
+                )
+            ].copy()
+            if "tipo" in filas_a02.columns:
+                filas_a02 = filas_a02[
+                    filas_a02["tipo"].fillna("").astype(str)
+                    .str.upper().str.strip().eq("CON")
+                ]
+
+            cantidades_a02 = {
+                codigo: sum(convertir_numero(valor) for valor in filas["cantidad"])
+                for codigo, filas in filas_a02.groupby("item_cont")
+            }
+            a02_mayores_uno = {
+                codigo: cantidad
+                for codigo, cantidad in cantidades_a02.items()
+                if cantidad > 1
+            }
+            if a02_mayores_uno:
+                detalle_cantidades = ", ".join(
+                    f"{codigo}={cantidad:g}"
+                    for codigo, cantidad in sorted(a02_mayores_uno.items())
+                )
+                agregar_alerta_actividad(
+                    pedido, subzona, actividad,
+                    "CANTIDAD_A02_MAYOR_1",
+                    sorted(a02_mayores_uno), [],
+                    "El ítem A02 no debe tener cantidad mayor a 1. "
+                    f"Cantidad encontrada: {detalle_cantidades}.",
+                )
+
+            # A31 puede coexistir con A02. La combinación prohibida es A31
+            # con A07 cuando comparten la misma terminación exacta.
+            items_error_a31_a07 = sorted({
                 item
                 for terminacion, items_zona in conjuntos_por_terminacion.items()
                 if f"A31{terminacion}" in items_zona
-                and (
-                    f"A02{terminacion}" in items_zona
-                    or f"A07{terminacion}" in items_zona
-                )
+                and f"A07{terminacion}" in items_zona
                 for item in items_zona
-                if item in {
-                    f"A31{terminacion}",
-                    f"A02{terminacion}",
-                    f"A07{terminacion}",
-                }
+                if item.startswith(("A31", "A07"))
             })
-            items_revision = []
-            if items_error_a31:
+            if items_error_a31_a07:
                 agregar_alerta_actividad(
                     pedido, subzona, actividad,
-                    "ERROR_COMBINACION_ITEMS_A31",
-                    items_error_a31, [],
+                    "ERROR_COMBINACION_A31_A07",
+                    items_error_a31_a07, [],
                     "Error: los ítems "
-                    + ", ".join(items_error_a31)
+                    + ", ".join(items_error_a31_a07)
                     + " no pueden combinarse.",
-                    no_permitidos=items_error_a31,
+                    no_permitidos=items_error_a31_a07,
                 )
 
-            # A02 junto con A07, con la misma terminación U/R, requiere revisar
-            # la autorización, pero no se registra como error automático.
-            else:
-                items_revision = sorted({
-                    item
-                    for terminacion, items_zona in conjuntos_por_terminacion.items()
-                    if {
-                        f"A02{terminacion}", f"A07{terminacion}"
-                    }.issubset(items_zona)
-                    for item in (
-                        f"A02{terminacion}", f"A07{terminacion}"
-                    )
-                })
+            # A02 junto con A07 requiere autorización de interventoría cuando
+            # ambos comparten la misma terminación exacta U, R, UA o RA.
+            items_revision = sorted({
+                item
+                for terminacion, items_zona in conjuntos_por_terminacion.items()
+                if f"A02{terminacion}" in items_zona
+                and f"A07{terminacion}" in items_zona
+                for item in items_zona
+                if item.startswith(("A02", "A07"))
+            })
 
             if items_revision:
                 agregar_alerta_actividad(
@@ -2183,7 +2425,7 @@ def validar_reglas_actividades(df_export_in):
         # Reglas:
         # - Si tiene al menos uno válido -> cumple presencia
         # - Si no tiene ninguno -> FALTA ÍTEM VÁLIDO
-        # - Si tiene otro Dxx -> ERROR EN DIGITACIÓN
+        # - Si tiene otro Dxx o Hxx -> ERROR EN DIGITACIÓN
         # ====================================================
 
         if actividad == "AMRTR":
@@ -2194,24 +2436,24 @@ def validar_reglas_actividades(df_export_in):
                 "D04U", "D04R",
             }
 
-            items_d = {
+            items_amrtr = {
                 x for x in items_cont
                 if x.startswith("D")
             }
 
             items_validos = sorted(
-                items_d & permitidos
+                items_amrtr & permitidos
             )
 
             no_permitidos = sorted(
-                items_d - permitidos
+                items_amrtr - permitidos
             )
 
             faltantes = []
 
             if not items_validos:
                 faltantes.append(
-                    "D02U/D02R o D03U/D03R o D04U/D04R"
+                    "D02U/D02R, D03U/D03R o D04U/D04R"
                 )
 
             if faltantes or no_permitidos:
@@ -2239,7 +2481,7 @@ def validar_reglas_actividades(df_export_in):
                         else "FALTA ÍTEM VÁLIDO"
                     ),
                     "items_encontrados": ", ".join(
-                        sorted(items_d)
+                        sorted(items_amrtr)
                     ),
                     "items_faltantes": ", ".join(
                         faltantes
@@ -2260,6 +2502,7 @@ def validar_reglas_actividades(df_export_in):
         #
         # Reglas:
         # - Si tiene uno de los dos -> cumple presencia
+        # - La cantidad total del código encontrado no puede ser mayor a 1
         # - Si no tiene ninguno -> FALTA ÍTEM VÁLIDO
         # - Si tiene otro Dxx -> ERROR EN DIGITACIÓN
         # ====================================================
@@ -2329,6 +2572,31 @@ def validar_reglas_actividades(df_export_in):
                     ),
                 })
 
+            # La cantidad se suma por código para detectar tanto una fila con
+            # cantidad mayor a 1 como varias filas repetidas que la acumulen.
+            for codigo_d01 in items_validos:
+                cantidad_total_d01 = sum(
+                    convertir_numero(valor)
+                    for valor in grupo.loc[
+                        grupo["item_cont"].eq(codigo_d01),
+                        "cantidad",
+                    ]
+                )
+
+                if cantidad_total_d01 > 1:
+                    agregar_alerta_actividad(
+                        pedido,
+                        subzona,
+                        actividad,
+                        "CANTIDAD_D01_MAYOR_1_ACREV",
+                        [codigo_d01],
+                        ["cantidad máxima = 1"],
+                        f"Por ningún motivo el ítem {codigo_d01} debe tener "
+                        f"cantidad mayor a 1. Cantidad encontrada: "
+                        f"{cantidad_total_d01:g}.",
+                        no_permitidos=[codigo_d01],
+                    )
+
         # ====================================================
         # ACAMN / ALECA
         # Código obligatorio válido: C05U o C05R
@@ -2336,19 +2604,24 @@ def validar_reglas_actividades(df_export_in):
 
         elif actividad in {"ACAMN", "ALECA"}:
 
-            permitidos = {
+            permitidos_principales = {
                 "C05U",
                 "C05R",
                 "C09U",
                 "C09R",
             }
+            permitidos = set(permitidos_principales)
+            items_evaluables = {
+                item for item in items_cont
+                if not item.startswith("H04")
+            }
 
             items_validos = sorted(
-                items_cont & permitidos
+                items_cont & permitidos_principales
             )
 
             no_permitidos = sorted(
-                items_cont - permitidos
+                items_evaluables - permitidos
             )
 
             faltantes = []
@@ -2404,19 +2677,24 @@ def validar_reglas_actividades(df_export_in):
 
         elif actividad in {"ALEGA", "ALEGN"}:
 
-            permitidos = {
+            permitidos_principales = {
                 "C01U", "C01R",
                 "C02U", "C02R",
                 "C03U", "C03R",
                 "C04U", "C04R",
             }
+            permitidos = set(permitidos_principales)
+            items_evaluables = {
+                item for item in items_cont
+                if not item.startswith("H04")
+            }
 
             items_validos = sorted(
-                items_cont & permitidos
+                items_cont & permitidos_principales
             )
 
             no_permitidos = sorted(
-                items_cont - permitidos
+                items_evaluables - permitidos
             )
 
             faltantes = []
@@ -4956,6 +5234,15 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["AMBOS", "Faltan materiales de esta mano de obra y hay otros no asociados a ella.", "Revisar todas las manos de obra y materiales del pedido."],
         ],
     )
+    agregar_texto_guia(
+        "Regla especial para A31: los materiales 211618 y 336759 son "
+        "alternativos y no pueden aparecer juntos en el mismo pedido. Si se "
+        "encuentran ambos, VALIDACION genera REVISAR_A31. Además, la cantidad "
+        "registrada para cualquiera de estos materiales no puede ser mayor a 1; "
+        "si la supera, genera CANTIDAD_A31>1.",
+        negrita=True,
+        altura=48,
+    )
 
     # 2. Cantidades y duplicidad
     agregar_seccion_guia("2. Alertas de cantidad y duplicidad de Mano de Obra")
@@ -5098,13 +5385,42 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "La hoja ALERTA_ACTIVIDADES verifica que cada actividad tenga las manos de "
         "obra definidas en su regla de negocio."
     )
+    agregar_texto_guia(
+        "Reglas generales por pedido: las siguientes validaciones aplican sin "
+        "importar la actividad registrada.",
+        negrita=True,
+        altura=30,
+    )
+    agregar_tabla_guia(
+        ["Condición encontrada", "Regla aplicada", "Alerta generada"],
+        [
+            [
+                "Dos o más ítems diferentes entre A03U/R, A04U/R, A06U/R, A07U/R y A08U/R",
+                "Dos o más de estos ítems en el mismo pedido es una inconsistencia.",
+                "COMBINACION_ITEMS_A03_A08_INCONSISTENTE.",
+            ],
+            [
+                "A02U/R + A03U/R, A02U/R + A02U/R o A03U/R + A03U/R",
+                "Estas combinaciones dentro del mismo pedido son incorrectas. "
+                "La repetición de A02 o A03 se reconoce por varias filas o por "
+                "una cantidad total mayor a 1.",
+                "COMBINACION_A02_A03_INCORRECTA: Revisar planilla.",
+            ],
+            [
+                "A03U/R en una actividad diferente de DSPRE o REEQU",
+                "El ítem A03 es exclusivo para las actividades DSPRE y REEQU.",
+                "A03_ACTIVIDAD_NO_PERMITIDA.",
+            ],
+        ],
+    )
     agregar_tabla_guia(
         ["Actividad", "Códigos válidos", "Aplicación de la regla"],
         [
             ["AMRTR", "D02U/R, D03U/R o D04U/R", "Debe aparecer al menos uno de los códigos válidos."],
-            ["ACREV", "D01U o D01R", "Debe aparecer D01U o D01R, según corresponda."],
-            ["ACAMN y ALECA", "C05U/R o C09U/R", "Solo se permiten ítems C05 o C09, con terminación urbana o rural."],
-            ["ALEGA y ALEGN", "C01U/R, C02U/R, C03U/R o C04U/R", "Debe aparecer uno de los códigos permitidos."],
+            ["ACREV", "D01U o D01R", "Debe aparecer D01U o D01R, según corresponda. Su cantidad total no puede ser mayor a 1."],
+            ["ACAMN", "C05U/R o C09U/R", "Solo se permiten ítems C05 o C09, con terminación urbana o rural."],
+            ["ALECA", "C05U/R o C09U/R", "Debe aparecer C05 o C09."],
+            ["ALEGA y ALEGN", "C01U/R, C02U/R, C03U/R o C04U/R", "Debe aparecer uno de C01-C04."],
             ["AEJDO", "CALE1F junto con A12U o A12R", "La relación es bidireccional: si aparece uno, debe aparecer el otro."],
         ],
     )
@@ -5128,9 +5444,9 @@ if "GUIA_REGLAS" in wb.sheetnames:
                 "ITEM NO PERMITIDO: Para las legalizaciones nuevas el ítem C05 no es correcto. Favor validar.",
             ],
             [
-                "ACAMN o ALECA con ítems diferentes a C05U/R o C09U/R",
-                "Solo están permitidos C05U/R y C09U/R. C01-C04, los códigos que comienzan por A y cualquier otro ítem diferente generan alerta.",
-                "ERROR EN DIGITACIÓN: En ACAMN y ALECA no están permitidos ítems diferentes a C05 y C09.",
+                "ACAMN o ALECA con ítems diferentes a los permitidos",
+                "En ACAMN y ALECA solo están permitidos C05U/R y C09U/R. Los demás ítems evaluados generan alerta.",
+                "ERROR EN DIGITACIÓN: se encontraron ítems diferentes a los permitidos para la actividad.",
             ],
             [
                 "ALEGA, ALEGN, ACAMN o ALECA con 215887 o 219404 marcados con cobro SI",
@@ -5171,14 +5487,34 @@ if "GUIA_REGLAS" in wb.sheetnames:
         ["Actividad y condición", "Regla aplicada", "Alerta generada"],
         [
             [
-                "AEJDO o DSPRE: A02U/R junto con A07U/R",
-                "La combinación requiere validar la autorización de interventoría. Se reconocen las terminaciones urbana y rural.",
+                "AEJDO o DSPRE: cantidad de A02U/R o A02UA/RA",
+                "A02 no debe tener cantidad mayor a 1. La regla reconoce urbano y rural, con o sin A final; la A final indica que el ítem no lleva cobro al usuario.",
+                "CANTIDAD_A02_MAYOR_1: El ítem A02 no debe tener cantidad mayor a 1.",
+            ],
+            [
+                "AEJDO o DSPRE: A02 + A07 con terminación U, R, UA o RA",
+                "La combinación requiere validar la autorización de interventoría cuando ambos códigos tienen la misma terminación exacta: U con U, R con R, UA con UA o RA con RA. No se mezclan códigos con A final y sin A final.",
                 "REVISAR_AUTORIZACION_INTERVENTORIA: Revisar autorización de interventoría.",
             ],
             [
-                "AEJDO o DSPRE: A31U/R junto con A02U/R o A07U/R",
-                "A31 no puede combinarse con A02 ni con A07 en el mismo pedido. La validación conserva los códigos U/R exactos encontrados.",
-                "ERROR_COMBINACION_ITEMS_A31: Error, no pueden combinarse.",
+                "AEJDO o DSPRE: A31 + A07 con terminación U, R, UA o RA",
+                "A31 puede combinarse con A02. La combinación que no debe existir es A31 con A07 cuando tienen la misma terminación exacta: U, R, UA o RA.",
+                "ERROR_COMBINACION_A31_A07: Error, no pueden combinarse.",
+            ],
+            [
+                "AEJDO, DSPRE o INPRE: A22U/R y A23U/R",
+                "Entre A22 y A23 solo puede existir un ítem por pedido. Se alerta si se repite A22, se repite A23, aparecen ambos o la cantidad acumulada es mayor a 1.",
+                "A22_A23_REPETIDOS_O_COMBINADOS: Por ningún motivo se deben repetir o combinar los ítems A22 y A23; solo debe existir uno de los dos.",
+            ],
+            [
+                "ACREV: D01U o D01R con cantidad mayor a 1",
+                "La cantidad total de D01U o D01R se suma dentro del mismo pedido, subzona y actividad, y no puede superar 1.",
+                "CANTIDAD_D01_MAYOR_1_ACREV: Por ningún motivo D01U o D01R debe tener cantidad mayor a 1.",
+            ],
+            [
+                "AEJDO, ACAMN, ALECA, ALEGA o ALEGN: C01U/R junto con A12U/R",
+                "En un mismo pedido solo puede relacionarse uno de los dos grupos: C01U/R o A12U/R. Si aparecen ambos, se genera alerta.",
+                "COMBINACION_C01_A12_NO_PERMITIDA.",
             ],
             [
                 "DIPRE: suministro 200098",
