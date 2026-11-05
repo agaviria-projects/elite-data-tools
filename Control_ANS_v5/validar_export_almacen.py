@@ -1147,8 +1147,8 @@ print(
 
 # ============================================================
 # HOJA NUEVA: MATERIALES_CANTIDAD
-# Detecta materiales SUM con cantidad > 1 y controla cantidad 1
-# para 200092, 200093 y CALE1F.
+# Detecta materiales SUM con cantidad > 1 y controla los suministros
+# cuya cantidad total debe ser exactamente 1.
 # ============================================================
 
 df_materiales_cantidad_base = df_export[
@@ -1172,8 +1172,26 @@ if "suminis" in df_materiales_cantidad_base.columns:
     )
     usar_suminis = sin_codigo | codigo_especial_suminis
     df_materiales_cantidad_base.loc[usar_suminis, "material"] = codigo_suminis[usar_suminis]
+    df_materiales_cantidad_base["suminis_norm"] = codigo_suminis
+else:
+    df_materiales_cantidad_base["suminis_norm"] = ""
+
+df_materiales_cantidad_base["actividad"] = (
+    df_materiales_cantidad_base["actividad"]
+    .fillna("").astype(str).str.strip().str.upper()
+)
 
 materiales_cantidad_uno = {"200092", "200093", "CALE1F"}
+
+actividades_suministros_cantidad_uno = {
+    "AEJDO", "INPRE", "DSPRE", "ACAMN", "ALECA", "ALEGA", "ALEGN",
+}
+suministros_cantidad_uno_actividad = {
+    "200092", "200093", "200098", "200099", "211357", "211390",
+    "211391", "211392", "211438", "211673", "211686", "211829",
+    "213333", "200151A", "211319A", "215887", "215887A", "219404",
+    "219404A", "211618A", "325998",
+}
 
 df_materiales_cantidad_base["cantidad"] = pd.to_numeric(
     df_materiales_cantidad_base["cantidad"]
@@ -1186,6 +1204,14 @@ df_materiales_cantidad_base["cantidad"] = pd.to_numeric(
 df_material_cantidad = df_materiales_cantidad_base[
     (df_materiales_cantidad_base["cantidad"] > 1)
     & ~df_materiales_cantidad_base["material"].isin(materiales_cantidad_uno)
+    & ~(
+        df_materiales_cantidad_base["actividad"].isin(
+            actividades_suministros_cantidad_uno
+        )
+        & df_materiales_cantidad_base["suminis_norm"].isin(
+            suministros_cantidad_uno_actividad
+        )
+    )
 ][["pedido", "actividad", "subz", "material", "cantidad"]].copy()
 
 df_cantidad_uno = (
@@ -1204,6 +1230,43 @@ df_cantidad_uno["detalle"] = (
     + "; debe ser 1 en el pedido y la actividad."
 )
 
+# En estas actividades, los suministros indicados por el usuario deben
+# sumar exactamente 1 dentro del mismo pedido, subzona y actividad.
+# 200092 y 200093 ya están controlados por materiales_cantidad_uno.
+# Se excluyen de este segundo bloque para no duplicar la misma alerta.
+suministros_nuevos_cantidad_uno = (
+    suministros_cantidad_uno_actividad - materiales_cantidad_uno
+)
+
+df_cantidad_uno_actividad = (
+    df_materiales_cantidad_base[
+        df_materiales_cantidad_base["actividad"].isin(
+            actividades_suministros_cantidad_uno
+        )
+        & df_materiales_cantidad_base["suminis_norm"].isin(
+            suministros_nuevos_cantidad_uno
+        )
+    ]
+    .groupby(
+        ["pedido", "actividad", "subz", "suminis_norm"],
+        dropna=False,
+    )["cantidad"]
+    .sum()
+    .reset_index()
+    .rename(columns={"suminis_norm": "material"})
+)
+
+df_cantidad_uno_actividad = df_cantidad_uno_actividad[
+    df_cantidad_uno_actividad["cantidad"].ne(1)
+].copy()
+df_cantidad_uno_actividad["alerta"] = "MATERIAL_CANTIDAD_DISTINTA_1"
+df_cantidad_uno_actividad["detalle"] = (
+    df_cantidad_uno_actividad["material"]
+    + " tiene cantidad total "
+    + df_cantidad_uno_actividad["cantidad"].astype(str)
+    + "; para esta actividad debe ser exactamente 1."
+)
+
 df_material_cantidad = df_material_cantidad.rename(
     columns={
         "subz": "subzona"
@@ -1219,7 +1282,11 @@ df_material_cantidad["detalle"] = (
 )
 
 df_material_cantidad = pd.concat(
-    [df_material_cantidad, df_cantidad_uno.rename(columns={"subz": "subzona"})],
+    [
+        df_material_cantidad,
+        df_cantidad_uno.rename(columns={"subz": "subzona"}),
+        df_cantidad_uno_actividad.rename(columns={"subz": "subzona"}),
+    ],
     ignore_index=True,
 )
 
@@ -1724,6 +1791,8 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #
 # AEJDO, ACAMN, ALECA, ALEGA y ALEGN:
 #   - C01U/R y A12U/R no pueden coexistir en el mismo pedido.
+#   - Si aparece el suministro 200092 o 200093, también debe existir
+#     CALE1F en la columna suminis del mismo pedido, subzona y actividad.
 #
 # AEJDO:
 #   - Regla bidireccional entre A12U/A12R y CALE1F:
@@ -1736,7 +1805,9 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - A10U/R requiere A12U/R, con la misma terminacion
 #   - A07U/R requiere el suministro 200384
 #   - 200092 requiere 200410 o 200492
+#   - 200092 requiere adicionalmente 210949
 #   - 200093 requiere 200411, 200493 o 323739
+#   - 200093 requiere adicionalmente 210954
 #   - A32U/R requiere simultaneamente 200151A y 211319A
 #
 # DSPRE:
@@ -1775,7 +1846,8 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - A03U/R es exclusivo para las actividades DSPRE y REEQU.
 #
 # A22: se cruza urbrur y tipre en AEJDO y DSPRE.
-# AEJDO, DSPRE e INPRE: entre A22U/R y A23U/R solo puede existir un ítem.
+# AEJDO, DSPRE e INPRE: entre A22U/R/UA/RA y A23U/R/UA/RA solo puede
+# existir un ítem por pedido, incluso si aparece en actividades diferentes.
 # A04R/A05R y A06R: correcciones según urbrur en cinco actividades.
 # ============================================================
 
@@ -1789,8 +1861,11 @@ def validar_reglas_actividades(df_export_in):
         "tipre",
         "tipo_alerta",
         "items_encontrados",
+        "suministros_encontrados",
         "items_faltantes",
+        "suministros_faltantes",
         "items_no_permitidos",
+        "suministros_no_permitidos",
         "detalle",
     ]
 
@@ -1889,6 +1964,9 @@ def validar_reglas_actividades(df_export_in):
         faltantes,
         detalle,
         no_permitidos=None,
+        suministros_encontrados=None,
+        suministros_faltantes=None,
+        suministros_no_permitidos=None,
         urbrur_valor="",
         tipre_valor="",
     ):
@@ -1900,8 +1978,17 @@ def validar_reglas_actividades(df_export_in):
             "tipre": tipre_valor,
             "tipo_alerta": tipo_alerta,
             "items_encontrados": ", ".join(encontrados),
+            "suministros_encontrados": ", ".join(
+                suministros_encontrados or []
+            ),
             "items_faltantes": ", ".join(faltantes),
+            "suministros_faltantes": ", ".join(
+                suministros_faltantes or []
+            ),
             "items_no_permitidos": ", ".join(no_permitidos or []),
+            "suministros_no_permitidos": ", ".join(
+                suministros_no_permitidos or []
+            ),
             "detalle": detalle,
         })
 
@@ -2004,6 +2091,98 @@ def validar_reglas_actividades(df_export_in):
                 no_permitidos=items_regla_20,
             )
 
+        # Regla de la imagen: dentro de un mismo pedido, C01U/R y A12U/R
+        # no pueden coexistir entre las actividades indicadas, incluso si
+        # fueron registrados en actividades diferentes. Debe existir uno
+        # u otro, pero no ambos.
+        actividades_c01_a12 = {
+            "AEJDO", "ACAMN", "ALECA", "ALEGA", "ALEGN",
+        }
+        grupo_c01_a12 = grupo_pedido[
+            grupo_pedido["actividad"].isin(actividades_c01_a12)
+        ]
+        items_c01_a12 = {
+            item for item in grupo_c01_a12["item_cont"] if item
+        }
+        items_c01 = sorted(items_c01_a12 & {"C01U", "C01R"})
+        items_a12 = sorted(items_c01_a12 & {"A12U", "A12R"})
+
+        if items_c01 and items_a12:
+            combinacion_c01_a12 = items_c01 + items_a12
+            subzonas_c01_a12 = sorted({
+                valor for valor in grupo_c01_a12["subz"] if valor
+            })
+            actividades_encontradas = sorted({
+                valor for valor in grupo_c01_a12["actividad"] if valor
+            })
+            agregar_alerta_actividad(
+                pedido_general,
+                ", ".join(subzonas_c01_a12),
+                ", ".join(actividades_encontradas),
+                "COMBINACION_C01_A12_NO_PERMITIDA",
+                combinacion_c01_a12,
+                [],
+                "En un mismo pedido solo se puede relacionar uno de los dos "
+                "grupos: C01U/R o A12U/R. No deben aparecer ambos, aunque "
+                "estén registrados en actividades diferentes.",
+                no_permitidos=combinacion_c01_a12,
+            )
+
+        # A22 / A23: en AEJDO, INPRE y DSPRE solo puede existir uno de
+        # los dos grupos por pedido. Se reconocen U, R, UA y RA, incluso
+        # cuando los registros aparecen en actividades o subzonas distintas.
+        actividades_a22_a23 = {"AEJDO", "INPRE", "DSPRE"}
+        codigos_a22_a23 = {
+            "A22U", "A22R", "A22UA", "A22RA",
+            "A23U", "A23R", "A23UA", "A23RA",
+        }
+        grupo_a22_a23 = grupo_pedido[
+            grupo_pedido["actividad"].isin(actividades_a22_a23)
+            & grupo_pedido["item_cont"].isin(codigos_a22_a23)
+        ].copy()
+
+        cantidad_total_a22_a23 = sum(
+            convertir_numero(valor)
+            for valor in grupo_a22_a23["cantidad"]
+        )
+        hay_repeticion_o_combinacion = (
+            len(grupo_a22_a23) > 1
+            or cantidad_total_a22_a23 > 1
+        )
+
+        if hay_repeticion_o_combinacion:
+            cantidades_por_codigo = {
+                codigo: sum(
+                    convertir_numero(valor)
+                    for valor in filas_codigo["cantidad"]
+                )
+                for codigo, filas_codigo
+                in grupo_a22_a23.groupby("item_cont")
+            }
+            detalle_cantidades = ", ".join(
+                f"{codigo}={cantidad:g}"
+                for codigo, cantidad in sorted(cantidades_por_codigo.items())
+            )
+            encontrados_a22_a23 = sorted(cantidades_por_codigo)
+            subzonas_a22_a23 = sorted({
+                valor for valor in grupo_a22_a23["subz"] if valor
+            })
+            actividades_encontradas = sorted({
+                valor for valor in grupo_a22_a23["actividad"] if valor
+            })
+            agregar_alerta_actividad(
+                pedido_general,
+                ", ".join(subzonas_a22_a23),
+                ", ".join(actividades_encontradas),
+                "A22_A23_REPETIDOS_O_COMBINADOS",
+                encontrados_a22_a23,
+                [],
+                "Por ningún motivo se deben repetir o combinar los ítems "
+                "A22 y A23; solo debe existir uno de los dos por pedido. "
+                f"Cantidad encontrada: {detalle_cantidades}.",
+                no_permitidos=encontrados_a22_a23,
+            )
+
     for (pedido, subzona, actividad), grupo in df.groupby(
         ["pedido", "subz", "actividad"]
     ):
@@ -2028,6 +2207,33 @@ def validar_reglas_actividades(df_export_in):
         suministros = items_res | items_suminis
 
         # ====================================================
+        # 200092 / 200093 REQUIEREN CALE1F
+        # Aplica a AEJDO, ACAMN, ALECA, ALEGA y ALEGN.
+        # Los tres códigos se consultan en la columna suminis (S).
+        # La regla se activa con cualquiera de los dos medidores y no
+        # depende del valor registrado en la columna cobro.
+        # ====================================================
+        if actividad in {"AEJDO", "ACAMN", "ALECA", "ALEGA", "ALEGN"}:
+            medidores_cale1f = sorted(
+                items_suminis & {"200092", "200093"}
+            )
+            if medidores_cale1f and "CALE1F" not in items_suminis:
+                agregar_alerta_actividad(
+                    pedido,
+                    subzona,
+                    actividad,
+                    "FALTA_CALE1F_POR_MEDIDOR",
+                    [],
+                    [],
+                    "Si se relaciona el suministro "
+                    + " o ".join(medidores_cale1f)
+                    + ", debe existir CALE1F en la columna suminis del "
+                    "mismo pedido, subzona y actividad.",
+                    suministros_encontrados=medidores_cale1f,
+                    suministros_faltantes=["CALE1F"],
+                )
+
+        # ====================================================
         # REGLA 21: A03 ES EXCLUSIVO PARA DSPRE Y REEQU
         # ====================================================
         if actividad not in {"DSPRE", "REEQU"}:
@@ -2045,78 +2251,6 @@ def validar_reglas_actividades(df_export_in):
                     "El ítem A03 es exclusivo para las actividades DSPRE y "
                     "REEQU.",
                     no_permitidos=items_a03_no_permitidos,
-                )
-
-        # ====================================================
-        # A22 / A23: SOLO PUEDE EXISTIR UNO DE LOS DOS
-        # Aplica a AEJDO, DSPRE e INPRE. También detecta una sola
-        # línea con cantidad mayor a 1 o varias líneas repetidas.
-        # ====================================================
-        if actividad in {"AEJDO", "DSPRE", "INPRE"}:
-            codigos_a22_a23 = {"A22U", "A22R", "A23U", "A23R"}
-            filas_a22_a23 = grupo[
-                grupo["item_cont"].isin(codigos_a22_a23)
-            ].copy()
-            if "tipo" in filas_a22_a23.columns:
-                filas_a22_a23 = filas_a22_a23[
-                    filas_a22_a23["tipo"].fillna("").astype(str)
-                    .str.upper().str.strip().eq("CON")
-                ]
-
-            # No usar Series.map(...).sum() sobre ArrowStringArray: pandas
-            # puede conservar el dtype texto y concatenar valores ("1" +
-            # "1" = "11") en vez de sumarlos. La suma generadora garantiza
-            # que el resultado sea siempre numerico.
-            cantidad_total_a22_a23 = sum(
-                convertir_numero(valor)
-                for valor in filas_a22_a23["cantidad"]
-            )
-            hay_repeticion_o_combinacion = (
-                len(filas_a22_a23) > 1
-                or cantidad_total_a22_a23 > 1
-            )
-
-            if hay_repeticion_o_combinacion:
-                cantidades_por_codigo = {
-                    codigo: sum(
-                        convertir_numero(valor)
-                        for valor in filas_codigo["cantidad"]
-                    )
-                    for codigo, filas_codigo
-                    in filas_a22_a23.groupby("item_cont")
-                }
-                detalle_cantidades = ", ".join(
-                    f"{codigo}={cantidad:g}"
-                    for codigo, cantidad
-                    in sorted(cantidades_por_codigo.items())
-                )
-                encontrados_a22_a23 = sorted(cantidades_por_codigo)
-                agregar_alerta_actividad(
-                    pedido, subzona, actividad,
-                    "A22_A23_REPETIDOS_O_COMBINADOS",
-                    encontrados_a22_a23, [],
-                    "Por ningún motivo se deben repetir o combinar los ítems "
-                    "A22 y A23; solo debe existir uno de los dos. "
-                    f"Cantidad encontrada: {detalle_cantidades}.",
-                    no_permitidos=encontrados_a22_a23,
-                )
-
-        # ====================================================
-        # C01 / A12: NO PUEDEN COEXISTIR
-        # Aplica a AEJDO, ACAMN, ALECA, ALEGA y ALEGN.
-        # ====================================================
-        if actividad in {"AEJDO", "ACAMN", "ALECA", "ALEGA", "ALEGN"}:
-            items_c01 = sorted(items_cont & {"C01U", "C01R"})
-            items_a12 = sorted(items_cont & {"A12U", "A12R"})
-            if items_c01 and items_a12:
-                combinacion_c01_a12 = items_c01 + items_a12
-                agregar_alerta_actividad(
-                    pedido, subzona, actividad,
-                    "COMBINACION_C01_A12_NO_PERMITIDA",
-                    combinacion_c01_a12, [],
-                    "Solo se puede relacionar uno de los dos ítems: C01U/R "
-                    "o A12U/R. No deben registrarse ambos en el mismo pedido.",
-                    no_permitidos=combinacion_c01_a12,
                 )
 
         # ====================================================
@@ -2174,7 +2308,7 @@ def validar_reglas_actividades(df_export_in):
                         subzona,
                         actividad,
                         "COBRO_NO_PERMITIDO_LEGALIZACION",
-                        materiales_cobrados,
+                        [],
                         [],
                         sujeto_cobro
                         + " y ".join(materiales_cobrados)
@@ -2183,7 +2317,7 @@ def validar_reglas_actividades(df_export_in):
                             if len(materiales_cobrados) == 1
                             else " se están cobrando al cliente. Por favor revisar."
                         ),
-                        no_permitidos=materiales_cobrados,
+                        suministros_encontrados=materiales_cobrados,
                     )
 
         # La corrección se basa en los ítems CON de la misma zona y
@@ -2331,9 +2465,10 @@ def validar_reglas_actividades(df_export_in):
             agregar_alerta_actividad(
                 pedido, subzona, actividad,
                 "ITEM_200098_NO_PERMITIDO_DIPRE",
-                ["200098"], [],
+                [], [],
                 "No debe tener ítem 200098.",
-                no_permitidos=["200098"],
+                suministros_encontrados=["200098"],
+                suministros_no_permitidos=["200098"],
             )
 
         # DIPRE: para esta regla, los únicos ítems de mano de obra de la
@@ -2803,29 +2938,39 @@ def validar_reglas_actividades(df_export_in):
             tiene_a12 = bool(a12_encontrados)
             tiene_cale1f = "CALE1F" in suministros
 
-            faltantes = []
-            encontrados = list(a12_encontrados)
-
-            if tiene_cale1f:
-                encontrados.append("CALE1F")
+            items_faltantes_relacion = []
+            suministros_faltantes_relacion = []
+            suministros_encontrados_relacion = (
+                ["CALE1F"] if tiene_cale1f else []
+            )
 
             if tiene_a12 and not tiene_cale1f:
-                faltantes.append("CALE1F")
+                suministros_faltantes_relacion.append("CALE1F")
 
             if tiene_cale1f and not tiene_a12:
-                faltantes.append("A12U/A12R")
+                items_faltantes_relacion.append("A12U/A12R")
 
-            if faltantes:
+            if items_faltantes_relacion or suministros_faltantes_relacion:
+                faltantes_detalle = (
+                    items_faltantes_relacion
+                    + suministros_faltantes_relacion
+                )
 
                 agregar_alerta_actividad(
                     pedido,
                     subzona,
                     actividad,
                     "REGLA_AEJDO",
-                    encontrados,
-                    faltantes,
+                    a12_encontrados,
+                    items_faltantes_relacion,
                     "AEJDO no cumple la relación entre A12U/A12R y "
-                    "CALE1F. Falta: " + ", ".join(faltantes),
+                    "CALE1F. Falta: " + ", ".join(faltantes_detalle),
+                    suministros_encontrados=(
+                        suministros_encontrados_relacion
+                    ),
+                    suministros_faltantes=(
+                        suministros_faltantes_relacion
+                    ),
                 )
 
             # Con A12 debe existir uno de los dos medidores y ambos
@@ -2842,13 +2987,16 @@ def validar_reglas_actividades(df_export_in):
                     agregar_alerta_actividad(
                         pedido, subzona, actividad,
                         "REGLA_AEJDO_A12_MATERIALES",
-                        a12_encontrados + sorted(
-                            suministros & {"200092", "200093", "215887", "219404"}
-                        ),
-                        faltantes_a12,
+                        a12_encontrados,
+                        [],
                         "Si AEJDO tiene A12U o A12R, debe incluir 200092 o "
                         "200093 y, además, los suministros 215887 y 219404. "
                         "CALE1F se valida en la regla A12/CALE1F.",
+                        suministros_encontrados=sorted(
+                            suministros
+                            & {"200092", "200093", "215887", "219404"}
+                        ),
+                        suministros_faltantes=faltantes_a12,
                     )
 
             # Los suministros 215887 y 219404 deben llevar cobro.
@@ -2871,12 +3019,13 @@ def validar_reglas_actividades(df_export_in):
                             subzona,
                             actividad,
                             "COBRO_FALTANTE_AEJDO",
-                            [codigo_cobro],
-                            ["vlr_cliente mayor a 0"],
+                            [],
+                            [],
                             f"El suministro {codigo_cobro} de AEJDO debe "
                             "llevar cobro al cliente, independientemente "
                             f"de la cantidad ({cantidad}). Se encontró "
                             "vlr_cliente=0.",
+                            suministros_encontrados=[codigo_cobro],
                         )
 
             # Reglas activadas por cada mano de obra y su terminacion U/R.
@@ -2930,13 +3079,18 @@ def validar_reglas_actividades(df_export_in):
                         cumple = not faltantes_regla
 
                     if not cumple:
+                        regla_de_mano_obra = "manos_obra" in regla
                         agregar_alerta_actividad(
                             pedido,
                             subzona,
                             actividad,
                             f"REGLA_AEJDO_{base_mo}",
-                            [disparador] + presentes,
-                            faltantes_regla,
+                            (
+                                [disparador] + presentes
+                                if regla_de_mano_obra
+                                else [disparador]
+                            ),
+                            faltantes_regla if regla_de_mano_obra else [],
                             f"Si AEJDO lleva {disparador}, debe llevar "
                             + (
                                 "al menos uno de: "
@@ -2945,6 +3099,14 @@ def validar_reglas_actividades(df_export_in):
                             )
                             + ", ".join(sorted(esperados))
                             + ".",
+                            suministros_encontrados=(
+                                presentes if not regla_de_mano_obra else []
+                            ),
+                            suministros_faltantes=(
+                                faltantes_regla
+                                if not regla_de_mano_obra
+                                else []
+                            ),
                         )
 
             # Reglas activadas por suministros.
@@ -2960,12 +3122,44 @@ def validar_reglas_actividades(df_export_in):
                         subzona,
                         actividad,
                         f"REGLA_AEJDO_{disparador}",
-                        [disparador],
-                        [" o ".join(sorted(alternativas))],
+                        [],
+                        [],
                         f"Si AEJDO lleva el suministro {disparador}, "
                         "debe llevar al menos uno de: "
                         + ", ".join(sorted(alternativas))
                         + ".",
+                        suministros_encontrados=[disparador],
+                        suministros_faltantes=[
+                            " o ".join(sorted(alternativas))
+                        ],
+                    )
+
+            # Requisitos adicionales por medidor. Estas reglas no reemplazan
+            # las alternativas anteriores: ambos controles deben cumplirse.
+            suministros_obligatorios_por_medidor = {
+                "200092": "210949",
+                "200093": "210954",
+            }
+
+            for medidor, suministro_obligatorio in (
+                suministros_obligatorios_por_medidor.items()
+            ):
+                if (
+                    medidor in suministros
+                    and suministro_obligatorio not in suministros
+                ):
+                    agregar_alerta_actividad(
+                        pedido,
+                        subzona,
+                        actividad,
+                        f"REGLA_AEJDO_{medidor}_{suministro_obligatorio}",
+                        [],
+                        [],
+                        f"Si AEJDO lleva el suministro {medidor}, debe "
+                        f"llevar obligatoriamente el código "
+                        f"{suministro_obligatorio}.",
+                        suministros_encontrados=[medidor],
+                        suministros_faltantes=[suministro_obligatorio],
                     )
 
         # ====================================================
@@ -3106,6 +3300,13 @@ def validar_reglas_actividades(df_export_in):
         return pd.DataFrame(
             columns=columnas_salida
         )
+
+    # Las reglas construidas directamente y las agregadas mediante el helper
+    # comparten la misma estructura. Los códigos se clasifican por su columna
+    # de origen (item_cont o suminis), no por comenzar con letra o número.
+    for resultado in resultados:
+        for columna_salida in columnas_salida:
+            resultado.setdefault(columna_salida, "")
 
     # Presentar el contexto también en las alertas existentes de esta hoja.
     contexto = df.groupby(["pedido", "subz", "actividad"])[["urbrur", "tipre"]].agg(
@@ -3311,9 +3512,11 @@ print(
 # HOJA NUEVA: ALERTA_CANTIDADES_MO
 #
 # RESPONSABILIDAD EXCLUSIVA:
-# Identificar cantidades mayores a 1 en manos de obra.
+# Identificar cantidades inválidas o sujetas a control en manos de obra.
 #
-# Regla:
+# Reglas:
+# - Cualquier fila con item_cont debe registrar cantidad igual o mayor a 1.
+# - Una cantidad vacía, no numérica o menor a 1 genera alerta.
 # - tipo = CON
 # - item_cont comienza por A o C
 # - o corresponde a D01-D04, en versión U o R
@@ -3391,14 +3594,48 @@ def validar_alerta_cantidades_mo(df_export_in):
         .str.strip()
     )
 
-    df["CANT_NUM"] = pd.to_numeric(
+    df["CANTIDAD_ORIGINAL"] = (
         df["cantidad"]
         .fillna("")
         .astype(str)
+        .str.strip()
+    )
+
+    df["CANT_NUM"] = pd.to_numeric(
+        df["CANTIDAD_ORIGINAL"]
         .str.replace(",", ".", regex=False)
         .str.strip(),
         errors="coerce"
     )
+
+    # Regla general: cualquier código informado en item_cont debe tener
+    # cantidad igual o mayor a 1, sin importar la actividad ni la familia
+    # del código. También se alertan cantidades vacías o no numéricas.
+    df_alerta_minima = df[
+        df["item_cont"].ne("")
+        & (
+            df["CANT_NUM"].isna()
+            | df["CANT_NUM"].lt(1)
+        )
+    ].copy()
+
+    df_alerta_minima["cantidad"] = df_alerta_minima["CANTIDAD_ORIGINAL"]
+    df_alerta_minima["tipo_alerta"] = "CANTIDAD_ITEM_CONT_MENOR_1"
+    if df_alerta_minima.empty:
+        df_alerta_minima["detalle"] = pd.Series(dtype="object")
+    else:
+        df_alerta_minima["detalle"] = df_alerta_minima.apply(
+            lambda r: (
+                f"El ítem {r['item_cont']} tiene cantidad "
+                + (
+                    r["CANTIDAD_ORIGINAL"]
+                    if r["CANTIDAD_ORIGINAL"]
+                    else "vacía o no numérica"
+                )
+                + ". Todo item_cont debe registrar una cantidad igual o mayor a 1."
+            ),
+            axis=1,
+        )
 
     # ========================================================
     # REGLA:
@@ -3424,27 +3661,36 @@ def validar_alerta_cantidades_mo(df_export_in):
         | df["item_cont"].isin(items_f_controlados)
     )
 
-    df_alerta = df[
+    df_alerta_mayor = df[
         df["tipo"].eq("CON")
         & mask_mo_controlada
         & (df["CANT_NUM"] > 1)
     ].copy()
 
+    df_alerta_mayor["cantidad"] = df_alerta_mayor["CANT_NUM"]
+    df_alerta_mayor["tipo_alerta"] = "CANTIDAD_MO>1"
+
+    if df_alerta_mayor.empty:
+        df_alerta_mayor["detalle"] = pd.Series(dtype="object")
+    else:
+        df_alerta_mayor["detalle"] = df_alerta_mayor.apply(
+            lambda r: (
+                f"La mano de obra {r['item_cont']} tiene cantidad "
+                f"{r['CANT_NUM']:g}. Requiere revisión del analista."
+            ),
+            axis=1
+        )
+
+    df_alerta = pd.concat(
+        [df_alerta_minima, df_alerta_mayor],
+        ignore_index=True,
+        sort=False,
+    )
+
     if df_alerta.empty:
         return pd.DataFrame(
             columns=columnas_salida
         )
-
-    df_alerta["cantidad"] = df_alerta["CANT_NUM"]
-    df_alerta["tipo_alerta"] = "CANTIDAD_MO>1"
-
-    df_alerta["detalle"] = df_alerta.apply(
-        lambda r: (
-            f"La mano de obra {r['item_cont']} tiene cantidad "
-            f"{r['CANT_NUM']:g}. Requiere revisión del analista."
-        ),
-        axis=1
-    )
 
     df_alerta = (
         df_alerta
@@ -4422,6 +4668,14 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
         "items_faltantes"
     )
 
+    col_suministros_faltantes = encabezados_act.get(
+        "suministros_faltantes"
+    )
+
+    col_suministros_no_permitidos = encabezados_act.get(
+        "suministros_no_permitidos"
+    )
+
     col_tipo_alerta_act = encabezados_act.get(
         "tipo_alerta"
     )
@@ -4431,7 +4685,7 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
     )
 
     # Las filas que requieren revision se resaltan claramente:
-    # - tipo_alerta, items_faltantes e items_no_permitidos: rojo
+    # - faltantes y no permitidos, tanto de MO como de suministros: rojo
     # - detalle: amarillo fuerte para facilitar su lectura
     # El color no representa U o R; solo el nivel de atencion.
     fill_rojo_alerta = PatternFill(
@@ -4465,6 +4719,19 @@ if "ALERTA_ACTIVIDADES" in wb.sheetnames:
             if celda_faltantes.value:
                 celda_faltantes.fill = fill_rojo_alerta
                 celda_faltantes.font = font_blanco
+
+        for columna_suministro_alerta in (
+            col_suministros_faltantes,
+            col_suministros_no_permitidos,
+        ):
+            if columna_suministro_alerta:
+                celda_suministro = ws_act.cell(
+                    row=fila,
+                    column=columna_suministro_alerta,
+                )
+                if celda_suministro.value:
+                    celda_suministro.fill = fill_rojo_alerta
+                    celda_suministro.font = font_blanco
 
         if col_detalle_act:
             celda_detalle = ws_act.cell(
@@ -5302,6 +5569,15 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "Si se registra 0, más de 1 o varias filas que suman un valor distinto "
         "de 1, ALERTA_CANTIDADES muestra MATERIAL_CANTIDAD_DISTINTA_1."
     )
+    agregar_texto_guia(
+        "En las actividades AEJDO, INPRE, DSPRE, ACAMN, ALECA, ALEGA y ALEGN, "
+        "los siguientes suministros también deben registrar una cantidad total "
+        "exactamente igual a 1 por pedido, subzona y actividad: 200092, 200093, "
+        "200098, 200099, 211357, 211390, 211391, 211392, 211438, 211673, "
+        "211686, 211829, 213333, 200151A, 211319A, 215887, 215887A, 219404, "
+        "219404A, 211618A y 325998. Si la cantidad es diferente de 1, se genera "
+        "MATERIAL_CANTIDAD_DISTINTA_1."
+    )
 
     # 5. Rural/Urbano
     agregar_seccion_guia("5. Alerta Rural/Urbano")
@@ -5386,6 +5662,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
         "obra definidas en su regla de negocio."
     )
     agregar_texto_guia(
+        "Las columnas items_encontrados e items_faltantes presentan únicamente "
+        "las manos de obra tomadas de item_cont. Las columnas "
+        "suministros_encontrados y suministros_faltantes presentan los códigos "
+        "tomados de suminis, aunque el suministro contenga letras, como CALE1F, "
+        "CALPRO01, REVMD, REVMIA, REVMIB o SIMCARD."
+    )
+    agregar_texto_guia(
         "Reglas generales por pedido: las siguientes validaciones aplican sin "
         "importar la actividad registrada.",
         negrita=True,
@@ -5453,6 +5736,11 @@ if "GUIA_REGLAS" in wb.sheetnames:
                 "Cuando el pedido contiene C01-C05 o los suministros REVMD, REVMIB, REVMIA, 219404, 219404/P, 215887 o 215887/P, los materiales 215887 y 219404 no deben estar marcados para cobro al cliente. La validación consulta suminis y también item_res por compatibilidad.",
                 "COBRO_NO_PERMITIDO_LEGALIZACION: El material se está cobrando al cliente. Por favor revisar.",
             ],
+            [
+                "AEJDO, ACAMN, ALECA, ALEGA o ALEGN con 200092 o 200093",
+                "Si en la columna suminis aparece 200092 o 200093, debe existir CALE1F en la misma columna, pedido, subzona y actividad. La regla no depende del valor de cobro.",
+                "FALTA_CALE1F_POR_MEDIDOR: falta el suministro CALE1F.",
+            ],
         ],
     )
     agregar_texto_guia(
@@ -5471,8 +5759,8 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["A02U o A02R", "Debe llevar A06U/R o A08U/R con la misma terminación. Uno de los dos es suficiente.", "REGLA_AEJDO_A02."],
             ["A10U o A10R", "Debe llevar A12U/R con la misma terminación.", "REGLA_AEJDO_A10."],
             ["A07U o A07R", "Debe llevar obligatoriamente el suministro 200384.", "REGLA_AEJDO_A07."],
-            ["Suministro 200092", "Debe llevar 200410 o 200492. Uno de los dos es suficiente.", "REGLA_AEJDO_200092."],
-            ["Suministro 200093", "Debe llevar 200411, 200493 o 323739. Uno de los tres es suficiente.", "REGLA_AEJDO_200093."],
+            ["Suministro 200092", "Debe llevar 200410 o 200492 y, adicionalmente, el código 210949.", "REGLA_AEJDO_200092 si falta una alternativa; REGLA_AEJDO_200092_210949 si falta 210949."],
+            ["Suministro 200093", "Debe llevar 200411, 200493 o 323739 y, adicionalmente, el código 210954.", "REGLA_AEJDO_200093 si falta una alternativa; REGLA_AEJDO_200093_210954 si falta 210954."],
             ["A32U o A32R", "Debe llevar obligatoriamente los dos suministros: 200151A y 211319A.", "REGLA_AEJDO_A32."],
         ],
     )
@@ -5502,9 +5790,9 @@ if "GUIA_REGLAS" in wb.sheetnames:
                 "ERROR_COMBINACION_A31_A07: Error, no pueden combinarse.",
             ],
             [
-                "AEJDO, DSPRE o INPRE: A22U/R y A23U/R",
-                "Entre A22 y A23 solo puede existir un ítem por pedido. Se alerta si se repite A22, se repite A23, aparecen ambos o la cantidad acumulada es mayor a 1.",
-                "A22_A23_REPETIDOS_O_COMBINADOS: Por ningún motivo se deben repetir o combinar los ítems A22 y A23; solo debe existir uno de los dos.",
+                "AEJDO, DSPRE o INPRE: A22 y A23 con terminación U, R, UA o RA",
+                "Entre A22 y A23 solo puede existir un ítem por pedido, incluso si aparecen en actividades diferentes. Se alerta si se repite A22, se repite A23, aparecen ambos o la cantidad acumulada es mayor a 1.",
+                "A22_A23_REPETIDOS_O_COMBINADOS: Por ningún motivo se deben repetir o combinar los ítems A22 y A23; solo debe existir uno de los dos por pedido.",
             ],
             [
                 "ACREV: D01U o D01R con cantidad mayor a 1",
@@ -5513,7 +5801,7 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ],
             [
                 "AEJDO, ACAMN, ALECA, ALEGA o ALEGN: C01U/R junto con A12U/R",
-                "En un mismo pedido solo puede relacionarse uno de los dos grupos: C01U/R o A12U/R. Si aparecen ambos, se genera alerta.",
+                "En un mismo pedido solo puede relacionarse uno de los dos grupos: C01U/R o A12U/R. Si aparecen ambos, se genera alerta, incluso cuando estén registrados en actividades diferentes de este grupo.",
                 "COMBINACION_C01_A12_NO_PERMITIDA.",
             ],
             [
@@ -5624,11 +5912,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
     agregar_seccion_guia("8. Alerta de cantidad de Mano de Obra")
     agregar_texto_guia(
         "La hoja ALERTA_CANTIDADES_MO presenta de forma detallada y visual las manos "
-        "de obra controladas cuya cantidad es mayor a 1."
+        "de obra con cantidades sujetas a validación. Todo item_cont, sin importar "
+        "la actividad, debe registrar una cantidad igual o mayor a 1."
     )
     agregar_tabla_guia(
         ["Grupo", "Códigos controlados", "Ejemplo de alerta"],
         [
+            ["Todos", "Cualquier código informado en item_cont.", "Cantidad vacía, no numérica, 0 o menor a 1."],
             ["A", "Cualquier item_cont que comience por A.", "A21R con cantidad 4."],
             ["C", "Cualquier item_cont que comience por C.", "C02U con cantidad 2."],
             ["D", "D01U/R, D02U/R, D03U/R y D04U/R.", "D01U con cantidad 2."],
@@ -5636,9 +5926,10 @@ if "GUIA_REGLAS" in wb.sheetnames:
         ],
     )
     agregar_texto_guia(
-        "Aunque esta novedad también aparece en la hoja VALIDACION, aquí el analista "
-        "puede consultar fácilmente el pedido, el código, la cantidad encontrada y "
-        "el detalle de la alerta."
+        "CANTIDAD_ITEM_CONT_MENOR_1 identifica cantidades inválidas en cualquier "
+        "item_cont. Los controles de cantidades mayores a 1 para las familias A, C, "
+        "D y F continúan funcionando como alertas de revisión. Aquí el analista "
+        "puede consultar el pedido, el código, la cantidad y el detalle."
     )
 
     # 9. Instalaciones masivas
