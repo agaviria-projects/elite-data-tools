@@ -181,6 +181,7 @@ def crear_correo_outlook(
     adjuntos: list[Path],
     enviar_automaticamente: bool = False,
     modalidad_adjuntos: str = "Libro completo",
+    solicitar_confirmacion_lectura: bool = True,
 ) -> None:
     """Abre el correo para revisión o lo envía mediante Outlook Desktop."""
 
@@ -195,6 +196,9 @@ def crear_correo_outlook(
         f"{fecha_inicial} al {fecha_final}"
     )
     correo.Importance = 1
+    # Outlook solicitará un comprobante cuando el destinatario abra el correo.
+    # La respuesta depende de la configuración de Outlook del destinatario.
+    correo.ReadReceiptRequested = bool(solicitar_confirmacion_lectura)
     correo.HTMLBody = construir_html(
         fecha_inicial,
         fecha_final,

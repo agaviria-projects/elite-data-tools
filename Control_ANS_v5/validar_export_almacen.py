@@ -1810,14 +1810,21 @@ print(f"🚨 Páginas por municipio para revisión: {len(df_alerta_pagina_munici
 #   - 200093 requiere adicionalmente 210954
 #   - A32U/R requiere simultaneamente 200151A y 211319A
 #
+# INPRE:
+#   - Si aparece A11U o A11R, debe existir el suministro 211686 en el
+#     mismo pedido, subzona y actividad.
+#
 # DSPRE:
-#   - Si aparece A13U/R, debe existir A22U/R (o A022U/R)
-#     con la misma terminacion.
+#   - Fuera de los tipre con regla propia, si aparece A13U/R debe existir
+#     A22U/R (o A022U/R) con la misma terminacion.
 #   - Si ambos estan presentes, cumple y no genera observacion.
 #   - ENESUB/ENEPIL/ENEPUN: A15U/R es valido; A13U/R y A14U/R alertan.
 #   - ENESUB/ENEPUN/ENEPIL/ENEPRE: A03U/R y A06U/R son validos para
 #     acometidas; A04U/R y A07U/R no aplican.
 #   - ENEPRE: A13U/R y A14U/R aplican; A15U/R no corresponde.
+#   - ENEPRE: son incorrectas las combinaciones A13+A04, A13+A05 y
+#     A14+A06 con la misma terminacion U/R. Son correctas A13+A06,
+#     A14+A04 y A14+A05.
 #   - En tipre ENEPRE, A13 junto con A22 genera alerta de cobro.
 #
 # AEJDO o DSPRE:
@@ -2207,6 +2214,25 @@ def validar_reglas_actividades(df_export_in):
         suministros = items_res | items_suminis
 
         # ====================================================
+        # INPRE: A11U/R REQUIERE EL SUMINISTRO 211686
+        # ====================================================
+        if actividad == "INPRE":
+            items_a11 = sorted(items_cont & {"A11U", "A11R"})
+            if items_a11 and "211686" not in suministros:
+                agregar_alerta_actividad(
+                    pedido,
+                    subzona,
+                    actividad,
+                    "REGLA_INPRE_A11_211686",
+                    items_a11,
+                    [],
+                    "Si en la descarga se evidencia el ítem "
+                    + " o ".join(items_a11)
+                    + ", siempre debe existir el suministro 211686.",
+                    suministros_faltantes=["211686"],
+                )
+
+        # ====================================================
         # 200092 / 200093 REQUIEREN CALE1F
         # Aplica a AEJDO, ACAMN, ALECA, ALEGA y ALEGN.
         # Los tres códigos se consultan en la columna suminis (S).
@@ -2519,7 +2545,8 @@ def validar_reglas_actividades(df_export_in):
                         urbrur_valor=zona, tipre_valor=tipo_prepago,
                     )
                 elif (actividad == "DSPRE" and zona == "U"
-                      and codigo == "A22U" and tipo_prepago == "ENEPRE"):
+                      and codigo == "A22U" and tipo_prepago == "ENEPRE"
+                      and "A13U" not in items_cont):
                     agregar_alerta_actividad(
                         pedido, subzona, actividad, "A22U_NO_VALIDO_ENEPRE",
                         [codigo], ["tipre ENESUB o ENEPIL"],
@@ -3174,6 +3201,7 @@ def validar_reglas_actividades(df_export_in):
 
             tipres_a15 = {"ENESUB", "ENEPIL", "ENEPUN"}
             tipres_acometida = {"ENESUB", "ENEPUN", "ENEPIL", "ENEPRE"}
+            tipres_acometida_sin_enepre = {"ENESUB", "ENEPUN", "ENEPIL"}
 
             # ENESUB, ENEPIL y ENEPUN usan A15. A13 y A14 no corresponden
             # para estos tipos de prepago.
@@ -3197,15 +3225,42 @@ def validar_reglas_actividades(df_export_in):
                     )
 
             # Para instalaciones de acometidas en prepago aplican A03 y A06.
-            # A04 y A07 no corresponden para ninguno de estos cuatro tipre.
+            # En ENESUB, ENEPUN y ENEPIL, A04 y A07 no corresponden.
+            # ENEPRE tiene una excepcion: A04 es valido cuando acompana a A14
+            # con la misma terminacion U/R. Las combinaciones particulares de
+            # ENEPRE se validan en el bloque siguiente.
             tipres_acometida_encontrados = sorted(
                 tipres_grupo & tipres_acometida
             )
             if tipres_acometida_encontrados:
+                items_no_validos_acometida = set()
+
+                if tipres_grupo & tipres_acometida_sin_enepre:
+                    items_no_validos_acometida.update(
+                        item for item in items_cont
+                        if item[:-1] in {"A04", "A07"}
+                        and item[-1:] in {"U", "R"}
+                    )
+
+                if "ENEPRE" in tipres_grupo:
+                    items_no_validos_acometida.update(
+                        item for item in items_cont
+                        if item[:-1] == "A07"
+                        and item[-1:] in {"U", "R"}
+                    )
+                    for terminacion in ("U", "R"):
+                        a04 = f"A04{terminacion}"
+                        a13 = f"A13{terminacion}"
+                        a14 = f"A14{terminacion}"
+                        if (
+                            a04 in items_cont
+                            and a13 not in items_cont
+                            and a14 not in items_cont
+                        ):
+                            items_no_validos_acometida.add(a04)
+
                 items_no_validos_acometida = sorted(
-                    item for item in items_cont
-                    if item[:-1] in {"A04", "A07"}
-                    and item[-1:] in {"U", "R"}
+                    items_no_validos_acometida
                 )
                 if items_no_validos_acometida:
                     agregar_alerta_actividad(
@@ -3244,6 +3299,32 @@ def validar_reglas_actividades(df_export_in):
                 for terminacion in ("U", "R"):
                     a13 = f"A13{terminacion}"
 
+                    a04 = f"A04{terminacion}"
+                    a05 = f"A05{terminacion}"
+                    a06 = f"A06{terminacion}"
+                    a14 = f"A14{terminacion}"
+
+                    combinaciones_incorrectas = [
+                        (a13, a04),
+                        (a13, a05),
+                        (a14, a06),
+                    ]
+                    for item_uno, item_dos in combinaciones_incorrectas:
+                        if item_uno in items_cont and item_dos in items_cont:
+                            encontrados_combinacion = [item_uno, item_dos]
+                            agregar_alerta_actividad(
+                                pedido, subzona, actividad,
+                                "COMBINACION_INCORRECTA_DSPRE_ENEPRE",
+                                encontrados_combinacion, [],
+                                "Combinación incorrecta para DSPRE con tipre "
+                                "ENEPRE. Las combinaciones correctas son "
+                                f"A06{terminacion}+A13{terminacion}, "
+                                f"A04{terminacion}+A14{terminacion} o "
+                                f"A05{terminacion}+A14{terminacion}.",
+                                no_permitidos=encontrados_combinacion,
+                                tipre_valor="ENEPRE",
+                            )
+
                     alternativas_a22_cobro = {
                         f"A22{terminacion}", f"A022{terminacion}"
                     }
@@ -3262,9 +3343,14 @@ def validar_reglas_actividades(df_export_in):
                             tipre_valor="ENEPRE",
                         )
 
-            # Si el tipre usa A15, A13/A14 ya se reportan como no válidos y
-            # no debe generarse además la observación antigua de A13 + A22.
-            regla_a13_a22_aplica = not bool(tipres_grupo & tipres_a15)
+            # Los tipre que usan A15 ya tienen su propia validacion. ENEPRE
+            # tambien se excluye de la observacion antigua: en este tipre,
+            # A13+A22 genera la alerta especifica de cobro incorrecto y las
+            # combinaciones A13/A14 con A04/A05/A06 se revisan arriba.
+            tipres_con_regla_propia = tipres_a15 | {"ENEPRE"}
+            regla_a13_a22_aplica = not bool(
+                tipres_grupo & tipres_con_regla_propia
+            )
 
             for terminacion in ("U", "R"):
                 alternativas_a22 = {
@@ -3734,8 +3820,9 @@ print(
 # - U/R no cambia el rango correspondiente.
 #
 # Salida:
-# pedido, subzona, pagina, pagina_base, cantidad_instalaciones,
-# item_cont, items_encontrados, item_esperado, tipo_alerta, detalle
+# pedido, subzona, pagina, otros_pedidos_misma_pagina, pagina_base,
+# cantidad_instalaciones, item_cont, items_encontrados, item_esperado,
+# tipo_alerta, detalle
 # ============================================================
 
 def validar_masivas(df_export_in):
@@ -3744,6 +3831,7 @@ def validar_masivas(df_export_in):
         "pedido",
         "subzona",
         "pagina",
+        "otros_pedidos_misma_pagina",
         "pagina_base",
         "cantidad_instalaciones",
         "item_cont",
@@ -3922,13 +4010,21 @@ def validar_masivas(df_export_in):
         )
         df_duplicadas["items_encontrados"] = df_duplicadas["item_cont"]
         df_duplicadas["item_esperado"] = ""
+        df_duplicadas["otros_pedidos_misma_pagina"] = df_duplicadas.apply(
+            lambda fila: ", ".join(
+                pedido
+                for pedido in claves_duplicadas[(fila["subz"], fila["pagina"])]
+                if pedido != fila["pedido"]
+            ),
+            axis=1,
+        )
         df_duplicadas["tipo_alerta"] = "PAGINA_DUPLICADA"
         df_duplicadas["detalle"] = df_duplicadas.apply(
             lambda fila: (
-                f"La página completa {fila['pagina']} aparece en distintos pedidos "
-                f"de la subzona {fila['subz']}: "
-                + ", ".join(claves_duplicadas[(fila["subz"], fila["pagina"])])
-                + ". Revisar duplicidad."
+                f"La página {fila['pagina']} del pedido {fila['pedido']} "
+                f"también aparece en el/los pedido(s) "
+                f"{fila['otros_pedidos_misma_pagina']} de la subzona "
+                f"{fila['subz']}. Revisar duplicidad."
             ),
             axis=1,
         )
@@ -3987,6 +4083,9 @@ def validar_masivas(df_export_in):
     df_alerta["tipo_alerta"] = (
         "ITEM_CONT_NO_CORRESPONDE_CANTIDAD"
     )
+    # Esta columna aplica únicamente a PAGINA_DUPLICADA. Se conserva vacía
+    # en las alertas de cantidad para mantener una estructura única en MASIVAS.
+    df_alerta["otros_pedidos_misma_pagina"] = ""
 
     df_alerta["detalle"] = df_alerta.apply(
         lambda r: (
@@ -5510,6 +5609,39 @@ if "GUIA_REGLAS" in wb.sheetnames:
         negrita=True,
         altura=48,
     )
+    agregar_texto_guia(
+        "Reglas especiales de materiales aplicadas después del cruce con la "
+        "Base Maestra: para las siguientes manos de obra basta con encontrar "
+        "uno de los suministros indicados en cada grupo.",
+        negrita=True,
+        altura=34,
+    )
+    agregar_tabla_guia(
+        ["Mano de obra", "Suministros alternativos", "Aplicación de la regla"],
+        [
+            ["A12", "200092 o 200093", "La presencia de cualquiera de los dos cumple el grupo."],
+            ["A05", "200492, 200410, 200411, 200493 o 323739", "La presencia de cualquiera de los cinco cumple el grupo."],
+            ["A23", "200493, 200411, 200492 o 200410", "La presencia de cualquiera de los cuatro cumple el grupo."],
+            ["A17", "210954 o 210949", "La presencia de cualquiera de los dos cumple el grupo."],
+            ["A22", "200410, 200493, 200411 o 200492", "La presencia de cualquiera de los cuatro cumple el grupo."],
+            ["A06", "200493, 200411, 200492, 200410 o 323739", "La presencia de cualquiera de los cinco cumple el grupo."],
+            ["A08", "200410, 200493, 200411 o 200492", "La presencia de cualquiera de los cuatro cumple el grupo."],
+        ],
+    )
+    agregar_texto_guia(
+        "Excepciones de presentación en VALIDACION: para las manos de obra de "
+        "familia C, los suministros 215887 y 219404 no se consideran faltantes "
+        "ni sobrantes. Para C04, el suministro 215887A tampoco se considera "
+        "faltante ni sobrante.",
+        negrita=True,
+        altura=42,
+    )
+    agregar_texto_guia(
+        "Regla por subzona: el suministro 200099 solamente aplica para NDC. "
+        "Fuera de NDC se excluye de faltantes y sobrantes en VALIDACION.",
+        negrita=True,
+        altura=30,
+    )
 
     # 2. Cantidades y duplicidad
     agregar_seccion_guia("2. Alertas de cantidad y duplicidad de Mano de Obra")
@@ -5591,6 +5723,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["Rural (R)", "El código debe terminar en R.", "INCONSISTENCIA_RURAL_URBANO"],
             ["Urbano (U)", "El código debe terminar en U.", "INCONSISTENCIA_RURAL_URBANO"],
         ],
+    )
+    agregar_texto_guia(
+        "Este control general evalúa únicamente códigos cuya última letra sea "
+        "U o R. Los códigos terminados en UA o RA se omiten en esta hoja y se "
+        "revisan solamente en las reglas específicas que los contemplan.",
+        negrita=True,
+        altura=34,
     )
 
     agregar_texto_guia(
@@ -5752,9 +5891,10 @@ if "GUIA_REGLAS" in wb.sheetnames:
     agregar_tabla_guia(
         ["Condición encontrada", "Requisito", "Resultado si no cumple"],
         [
-            ["Suministros 215887 o 219404", "Para la actividad AEJDO, si alguno de estos suministros lleva cantidad, debe registrar cobro al usuario en vlr_cliente.", "COBRO_FALTANTE_AEJDO. Ejemplo: 215887 con cantidad mayor a 0 y vlr_cliente = 0 genera alerta."],
+            ["Suministros 215887 o 219404", "Para la actividad AEJDO, cuando aparece alguno de estos suministros debe registrar cobro al usuario en vlr_cliente, independientemente de la cantidad.", "COBRO_FALTANTE_AEJDO. Ejemplo: 215887 con vlr_cliente = 0 genera alerta."],
             ["A18U o A18R", "Debe llevar obligatoriamente el suministro 211357.", "REGLA_AEJDO_A18."],
             ["A18U o A18R en AEJDO o INPRE", "Debe registrar A19U o A19R con la misma terminación, en el mismo pedido, subzona y actividad.", "REGLA_A18_REQUIERE_A19."],
+            ["A11U o A11R en INPRE", "Debe existir obligatoriamente el suministro 211686 en el mismo pedido, subzona y actividad.", "REGLA_INPRE_A11_211686: falta el suministro 211686."],
             ["A12U o A12R en AEJDO", "Debe llevar uno de los medidores 200092/200093 y ambos suministros 215887 y 219404. También debe llevar CALE1F.", "REGLA_AEJDO_A12_MATERIALES; la falta de CALE1F se señala en REGLA_AEJDO."],
             ["A02U o A02R", "Debe llevar A06U/R o A08U/R con la misma terminación. Uno de los dos es suficiente.", "REGLA_AEJDO_A02."],
             ["A10U o A10R", "Debe llevar A12U/R con la misma terminación.", "REGLA_AEJDO_A10."],
@@ -5837,14 +5977,24 @@ if "GUIA_REGLAS" in wb.sheetnames:
                 "ITEMS_A13_A14_NO_VALIDOS_PREPAGO_A15.",
             ],
             [
-                "DSPRE con ENESUB, ENEPUN, ENEPIL o ENEPRE: instalación de acometidas",
-                "Los ítems válidos son A03U/R y A06U/R. A04U/R y A07U/R no aplican para instalación de acometidas en prepago.",
+                "DSPRE con ENESUB, ENEPUN o ENEPIL: instalación de acometidas",
+                "Los ítems válidos son A03U/R y A06U/R. A04U/R y A07U/R no aplican para instalación de acometidas en estos tipre.",
                 "ITEMS_NO_APLICAN_ACOMETIDA_PREPAGO: Revisar.",
+            ],
+            [
+                "DSPRE con ENEPRE: instalación de acometidas",
+                "A07U/R no aplica. A04U/R solamente es correcto cuando acompaña a A14U/R con la misma terminación. A04 sin A13/A14 genera ITEMS_NO_APLICAN_ACOMETIDA_PREPAGO y A13+A04 genera COMBINACION_INCORRECTA_DSPRE_ENEPRE.",
+                "Aplicar las alertas específicas de ENEPRE según la combinación encontrada.",
             ],
             [
                 "DSPRE con ENEPRE",
                 "Para prepago mercado objetivo aplican A13U/R o A14U/R. El ítem A15U/R no corresponde.",
                 "A15_NO_CORRESPONDE_ENEPRE.",
+            ],
+            [
+                "DSPRE con ENEPRE: combinaciones A13/A14 con A04/A05/A06",
+                "Son incorrectas A13+A04, A13+A05 y A14+A06 con la misma terminación U/R. Son correctas A13+A06, A14+A04 y A14+A05.",
+                "COMBINACION_INCORRECTA_DSPRE_ENEPRE.",
             ],
             [
                 "DSPRE con ENEPRE: A13U/R + A22U/R (también reconoce A022U/R)",
@@ -5854,8 +6004,10 @@ if "GUIA_REGLAS" in wb.sheetnames:
         ],
     )
     agregar_texto_guia(
-        "Regla de DSPRE: para esta actividad, si se registra el ítem A13U o A13R, "
-        "debe incluirse el código correspondiente A22U o A22R, respectivamente. "
+        "Regla general de DSPRE fuera de los tipre que tienen una validación "
+        "propia: si se registra A13U o A13R, debe incluirse el código "
+        "correspondiente A22U o A22R, respectivamente. Esta exigencia no aplica "
+        "a ENEPRE, donde A13+A22 genera la alerta de cobro incorrecto. "
         "Si falta el A22 correspondiente, se genera una alerta y la columna detalle "
         "indica: El ítem A13 incluye la instalación del nuevo pase (anterior acometida).",
         negrita=True,
@@ -5870,8 +6022,8 @@ if "GUIA_REGLAS" in wb.sheetnames:
         [
             ["AEJDO · A22U", "Urbano; tipre distinto de ENESUB o ENEPIL.",
              "A22U_TIPO_PREPAGO_NO_VALIDO: A22U solo es válido para esos dos tipos de prepago."],
-            ["DSPRE · A22U", "Urbano; tipre ENEPRE.",
-             "A22U_NO_VALIDO_ENEPRE: revisar el ítem, válido para ENESUB o ENEPIL."],
+            ["DSPRE · A22U", "Urbano; tipre ENEPRE y no aparece A13U.",
+             "A22U_NO_VALIDO_ENEPRE: revisar el ítem, válido para ENESUB o ENEPIL. Si aparece junto con A13U, se genera únicamente COBRO_INCORRECTO_NUEVO_PASE_ENEPRE."],
             ["DSPRE · A22R", "Rural; tipre vacío.",
              "OBSERVACION_A22R_POSTE: comprobar si el medidor está en poste; si no, cambiar el ítem."],
         ],
@@ -5959,10 +6111,11 @@ if "GUIA_REGLAS" in wb.sheetnames:
     )
     agregar_texto_guia(
         "Si una misma página completa figura en dos o más pedidos distintos de "
-        "la misma subzona, MASIVAS muestra PAGINA_DUPLICADA para facilitar su "
-        "identificación. Varias filas de una página dentro de un solo pedido no "
-        "se consideran duplicidad. Esta alerta aparece aunque el ítem C01-C04 "
-        "sí corresponda con la cantidad de instalaciones."
+        "la misma subzona, MASIVAS muestra PAGINA_DUPLICADA. La columna "
+        "otros_pedidos_misma_pagina indica directamente en cuál pedido o pedidos "
+        "también aparece la página. Varias filas de una página dentro de un solo "
+        "pedido no se consideran duplicidad. Esta alerta aparece aunque el ítem "
+        "C01-C04 sí corresponda con la cantidad de instalaciones."
     )
     agregar_texto_guia(
         "Estas alertas facilitan la revisión, pero cada una debe ser validada por el "

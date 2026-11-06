@@ -257,11 +257,11 @@ def crear_validacion_materiales(panel):
 
         text="Proceso",
 
-        padding=20
+        padding=12
 
     )
 
-    acciones.pack(fill="x", pady=(20, 15))
+    acciones.pack(fill="x", pady=(14, 10))
 
     boton_validar = ttk.Button(
 
@@ -279,7 +279,7 @@ def crear_validacion_materiales(panel):
 
     )
 
-    boton_validar.pack(pady=(4, 12))
+    boton_validar.pack(pady=(2, 8))
 
     # ------------------------------------------------------
     # GENERACIÓN DE CORREOS
@@ -293,6 +293,7 @@ def crear_validacion_materiales(panel):
     fecha_final = ttk.StringVar(value=fecha_hoy)
     modo_correo = ttk.StringVar(value="Modo revisión")
     modalidad_adjuntos = ttk.StringVar(value="Libro completo")
+    confirmar_lectura = ttk.BooleanVar(value=True)
 
     ttk.Label(frm_correo, text="Fecha inicial:").grid(
         row=0, column=0, padx=(0, 6), pady=4, sticky="w"
@@ -336,6 +337,14 @@ def crear_validacion_materiales(panel):
     )
     boton_correo.grid(row=0, column=8, pady=4)
 
+    ttk.Checkbutton(
+        frm_correo,
+        text="Solicitar confirmación de lectura",
+        variable=confirmar_lectura,
+        bootstyle="success-round-toggle",
+        cursor="hand2",
+    ).grid(row=1, column=6, columnspan=3, pady=(5, 0), sticky="w")
+
     ttk.Label(
         acciones,
         text=(
@@ -343,7 +352,7 @@ def crear_validacion_materiales(panel):
             "Las fechas corresponden al rango digitado en la extracción de Fénix."
         ),
         bootstyle="secondary",
-    ).pack(anchor="w", pady=(8, 0))
+    ).pack(anchor="w", pady=(6, 0))
 
     # ------------------------------------------------------
 
@@ -359,11 +368,15 @@ def crear_validacion_materiales(panel):
 
     consola.pack(
 
-        fill="both",
+        fill="x",
 
-        expand=True
+        expand=False
 
     )
+
+    # Mantiene una altura útil aunque la ventana tenga poco espacio vertical.
+    consola.configure(height=115)
+    consola.pack_propagate(False)
 
     global txt_consola
 
@@ -371,17 +384,35 @@ def crear_validacion_materiales(panel):
 
         consola,
 
-        height=10
+        height=5,
+
+        wrap="word"
 
     )
 
     txt_consola.pack(
+
+        side="left",
 
         fill="both",
 
         expand=True
 
     )
+
+    scroll_consola = ttk.Scrollbar(
+
+        consola,
+
+        orient="vertical",
+
+        command=txt_consola.yview
+
+    )
+
+    scroll_consola.pack(side="right", fill="y")
+
+    txt_consola.configure(yscrollcommand=scroll_consola.set)
 
     txt_consola.insert(
 
@@ -404,7 +435,9 @@ def crear_validacion_materiales(panel):
         except ValueError:
             return False
 
-    def ejecutar_correo(inicial, final, automatico, presentacion):
+    def ejecutar_correo(
+        inicial, final, automatico, presentacion, solicitar_lectura
+    ):
         try:
             import pythoncom
             from modules.correo_validacion_materiales import (
@@ -433,6 +466,7 @@ def crear_validacion_materiales(panel):
                     adjuntos,
                     enviar_automaticamente=automatico,
                     modalidad_adjuntos=presentacion,
+                    solicitar_confirmacion_lectura=solicitar_lectura,
                 )
                 if automatico:
                     escribir_correo("✅ Correo enviado automáticamente.")
@@ -465,6 +499,7 @@ def crear_validacion_materiales(panel):
 
         automatico = modo_correo.get() == "Envío automático"
         presentacion = modalidad_adjuntos.get()
+        solicitar_lectura = confirmar_lectura.get()
         if automatico:
             continuar = messagebox.askyesno(
                 "Confirmar envío automático",
@@ -486,10 +521,20 @@ def crear_validacion_materiales(panel):
         )
         escribir_correo(f"📨 Modo: {modo_correo.get()}")
         escribir_correo(f"📎 Presentación: {presentacion}")
+        escribir_correo(
+            "📬 Confirmación de lectura: "
+            + ("Solicitada" if solicitar_lectura else "No solicitada")
+        )
         boton_correo.configure(state="disabled")
         threading.Thread(
             target=ejecutar_correo,
-            args=(inicial, final, automatico, presentacion),
+            args=(
+                inicial,
+                final,
+                automatico,
+                presentacion,
+                solicitar_lectura,
+            ),
             daemon=True,
         ).start()
 
