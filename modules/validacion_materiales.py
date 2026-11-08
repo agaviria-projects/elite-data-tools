@@ -1,6 +1,8 @@
 import ttkbootstrap as ttk
 
 import threading
+import queue
+import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -17,6 +19,84 @@ BASE = Path(__file__).resolve().parent.parent
 PROYECTO = BASE / "Control_ANS_v5"
 
 proyecto_actual = PROYECTO
+
+
+def configurar_icono_ventana(ventana):
+    """Usa los recursos del proyecto, independientemente del directorio de inicio."""
+    for nombre in ('LOGO.ico', 'icono.ico'):
+        ruta_icono = BASE / 'assets' / nombre
+        if ruta_icono.is_file():
+            try:
+                ventana.iconbitmap(str(ruta_icono))
+                return
+            except tk.TclError:
+                continue
+    ruta_png = BASE / 'assets' / 'LOGO.png'
+    if ruta_png.is_file():
+        try:
+            imagen = tk.PhotoImage(master=ventana, file=str(ruta_png))
+            ventana.iconphoto(False, imagen)
+            ventana._icono_datasuite = imagen  # Conservar la referencia Tk.
+        except tk.TclError:
+            pass  # Un recurso inválido no debe bloquear la operación.
+
+
+def dialogo_datasuite(padre, titulo, mensaje, confirmar=False):
+    """Aviso modal propio con logo: no modifica iconos globales de Windows."""
+    ventana = ttk.Toplevel(padre)
+    ventana.withdraw()
+    ventana.title(titulo)
+    configurar_icono_ventana(ventana)
+    ventana.transient(padre.winfo_toplevel())
+    ventana.resizable(True, True)
+    ancho = min(640, max(350, ventana.winfo_screenwidth() - 60))
+    alto = min(540 if confirmar else 300, max(230, ventana.winfo_screenheight() - 100))
+    ventana.geometry(f'{ancho}x{alto}')
+    marco = ttk.Frame(ventana, padding=16)
+    marco.pack(fill='both', expand=True)
+    ttk.Label(marco, text=titulo, font=('Segoe UI', 13, 'bold'),
+              bootstyle='info').pack(anchor='w', pady=(0, 12))
+    cuerpo = ttk.Frame(marco)
+    cuerpo.pack(fill='both', expand=True)
+    texto = tk.Text(cuerpo, wrap='word', font=('Segoe UI', 10),
+                    background=ttk.Style().colors.bg,
+                    foreground=ttk.Style().colors.fg,
+                    relief='flat', borderwidth=0)
+    barra = ttk.Scrollbar(cuerpo, orient='vertical', command=texto.yview)
+    barra.pack(side='right', fill='y')
+    texto.pack(side='left', fill='both', expand=True)
+    texto.configure(yscrollcommand=barra.set)
+    texto.insert('1.0', mensaje)
+    texto.configure(state='disabled')
+    botones = ttk.Frame(marco)
+    botones.pack(fill='x', pady=(12, 0))
+    respuesta = [False]
+
+    def cerrar(aceptar=False):
+        respuesta[0] = aceptar
+        ventana.destroy()
+
+    if confirmar:
+        ttk.Button(botones, text='Cancelar', bootstyle='secondary',
+                    command=cerrar).pack(side='right')
+        ttk.Button(botones, text='Continuar', bootstyle='success',
+                    command=lambda: cerrar(True)).pack(side='right', padx=(0, 10))
+    else:
+        ttk.Button(botones, text='Aceptar', command=lambda: cerrar(True)).pack(side='right')
+    ventana.protocol('WM_DELETE_WINDOW', cerrar)
+    ventana.bind('<Escape>', lambda event: cerrar())
+    ventana.deiconify()
+    ventana.update_idletasks()
+    raiz = padre.winfo_toplevel()
+    x = max(0, min(raiz.winfo_rootx() + (raiz.winfo_width() - ancho) // 2,
+                   ventana.winfo_screenwidth() - ancho))
+    y = max(0, min(raiz.winfo_rooty() + (raiz.winfo_height() - alto) // 2,
+                   ventana.winfo_screenheight() - alto))
+    ventana.geometry(f'+{x}+{y}')
+    ventana.wait_visibility()
+    ventana.grab_set()
+    padre.wait_window(ventana)
+    return respuesta[0]
 
 
 # ==========================================================
@@ -167,9 +247,35 @@ def crear_validacion_materiales(panel):
 
     # ------------------------------------------------------
 
-    cuerpo = ttk.Frame(vista)
+    # Panel superior desplazable y consola separada: los controles no pueden
+    # consumir toda la altura y dejar la consola fuera de la ventana.
+    division = ttk.Panedwindow(vista, orient='vertical')
+    division.pack(fill='both', expand=True)
+    superior = ttk.Frame(division)
+    lienzo = tk.Canvas(superior, highlightthickness=0, borderwidth=0,
+                       background=ttk.Style().colors.bg, height=320)
+    barra_superior = ttk.Scrollbar(superior, orient='vertical', command=lienzo.yview)
+    barra_superior.pack(side='right', fill='y')
+    barra_horizontal = ttk.Scrollbar(superior, orient='horizontal', command=lienzo.xview)
+    barra_horizontal.pack(side='bottom', fill='x')
+    lienzo.pack(side='left', fill='both', expand=True)
+    lienzo.configure(yscrollcommand=barra_superior.set,
+                     xscrollcommand=barra_horizontal.set)
+    controles = ttk.Frame(lienzo)
+    ventana_controles = lienzo.create_window((0, 0), window=controles, anchor='nw')
 
-    cuerpo.pack(fill="both", expand=True)
+    def ajustar_controles(event=None):
+        lienzo.itemconfigure(ventana_controles,
+            width=max(lienzo.winfo_width(), controles.winfo_reqwidth()))
+        lienzo.configure(scrollregion=lienzo.bbox('all'))
+
+    controles.bind('<Configure>', ajustar_controles)
+    lienzo.bind('<Configure>', ajustar_controles)
+    division.add(superior, weight=0)
+
+    cuerpo = ttk.Frame(controles)
+
+    cuerpo.pack(fill="x", expand=False)
 
     cuerpo.columnconfigure((0, 1), weight=1)
 
@@ -253,7 +359,7 @@ def crear_validacion_materiales(panel):
 
     acciones = ttk.Labelframe(
 
-        vista,
+        controles,
 
         text="Proceso",
 
@@ -354,11 +460,116 @@ def crear_validacion_materiales(panel):
         bootstyle="secondary",
     ).pack(anchor="w", pady=(6, 0))
 
+    from modules.seguimiento_lectura import (
+        DESTINATARIOS, COPIAS, CORTES, BOGOTA, cargar_configuracion,
+        guardar_configuracion, validar_opciones,
+    )
+    try:
+        configuracion = cargar_configuracion()
+    except (ValueError, KeyError, OSError) as error:
+        messagebox.showerror('Configuración de recordatorios',
+            'No se pudo cargar la configuración guardada. Revísela antes de enviar.\n' + str(error))
+        configuracion = dict(activo=False, espera=90, intervalo=30, maximo=2,
+                             destinatarios=DESTINATARIOS + COPIAS,
+                             corte='Mañana', esperas=dict(CORTES))
+    activar_seguimiento = ttk.BooleanVar(value=configuracion['activo'])
+    corte = ttk.StringVar(value=configuracion['corte'])
+    esperas_por_corte = {nombre: ttk.StringVar(value=str(configuracion['esperas'][nombre]))
+                         for nombre in CORTES}
+    intervalo_minutos = ttk.StringVar(value=str(configuracion['intervalo']))
+    maximo_recordatorios = ttk.StringVar(value=str(configuracion['maximo']))
+    seleccion_destinatarios = {
+        direccion: ttk.BooleanVar(value=direccion in configuracion['destinatarios'])
+        for direccion in DESTINATARIOS + COPIAS
+    }
+    seguimiento_frame = ttk.Frame(acciones)
+    seguimiento_frame.pack(fill='x', pady=(8, 0))
+    # Agrupar ajustes y consulta en una misma fila, sin un hueco flexible.
+    ttk.Checkbutton(seguimiento_frame, text='Recordatorios automáticos',
+                    variable=activar_seguimiento).grid(row=0, column=0, sticky='w')
+    ttk.Label(seguimiento_frame, text='Corte:').grid(row=0, column=1, padx=(10, 4))
+    selector_corte = ttk.Combobox(seguimiento_frame, textvariable=corte,
+                                 values=list(CORTES), state='readonly', width=9)
+    selector_corte.grid(row=0, column=2)
+    ttk.Label(seguimiento_frame, text='Espera inicial (min):').grid(row=0, column=3, padx=(10, 4))
+    entrada_espera = ttk.Entry(seguimiento_frame,
+        textvariable=esperas_por_corte[corte.get()], width=5)
+    entrada_espera.grid(row=0, column=4)
+    selector_corte.bind('<<ComboboxSelected>>', lambda event:
+        entrada_espera.configure(textvariable=esperas_por_corte[corte.get()]))
+    ttk.Label(seguimiento_frame, text='Intervalo (min):').grid(row=0, column=5, padx=(10, 4))
+    ttk.Entry(seguimiento_frame, textvariable=intervalo_minutos, width=4).grid(row=0, column=6)
+    ttk.Label(seguimiento_frame, text='Máximo:').grid(row=0, column=7, padx=(10, 4))
+    ttk.Combobox(seguimiento_frame, textvariable=maximo_recordatorios,
+                 values=['1', '2'], state='readonly', width=3).grid(row=0, column=8)
+    resumen_destinatarios = ttk.StringVar()
+
+    def resumir_destinatarios(*args):
+        cantidad = sum(bool(variable.get()) for variable in seleccion_destinatarios.values())
+        resumen_destinatarios.set(f'Recordatorios seleccionados: {cantidad}/11 · Correo inicial: 8 Para + 3 CC')
+
+    for variable in seleccion_destinatarios.values():
+        variable.trace_add('write', resumir_destinatarios)
+    resumir_destinatarios()
+
+    def elegir_destinatarios():
+        ventana = ttk.Toplevel(vista)
+        ventana.title('Destinatarios de recordatorios')
+        configurar_icono_ventana(ventana)
+        ventana.geometry('600x550')
+        marco = ttk.Frame(ventana, padding=16)
+        marco.pack(fill='both', expand=True)
+        ttk.Label(marco, text='Marcar = activar recordatorios para los NUEVOS informes.').pack(anchor='w')
+        ttk.Label(marco, text='Sin marcar = recibe el correo inicial, sin recordatorios.').pack(anchor='w', pady=(0, 10))
+        for nombre, lista in (('Destinatarios principales', DESTINATARIOS), ('Copias (CC)', COPIAS)):
+            ttk.Label(marco, text=nombre, font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(8, 4))
+            for direccion in lista:
+                ttk.Checkbutton(marco, text=direccion,
+                    variable=seleccion_destinatarios[direccion]).pack(anchor='w', pady=2)
+        ttk.Label(marco, text='Los seguimientos existentes se cancelan desde Ver seguimiento.').pack(anchor='w', pady=10)
+        ttk.Button(marco, text='Listo', command=ventana.destroy).pack(anchor='e')
+
+    ttk.Button(seguimiento_frame, text='Destinatarios', command=elegir_destinatarios).grid(
+        row=1, column=0, pady=(8, 0), sticky='w')
+
+    def recoger_opciones():
+        try:
+            esperas = {nombre: int(variable.get().strip()) for nombre, variable in esperas_por_corte.items()}
+            opciones = dict(activo=activar_seguimiento.get(), corte=corte.get(),
+                esperas=esperas, espera=esperas[corte.get()],
+                intervalo=int(intervalo_minutos.get().strip()),
+                maximo=int(maximo_recordatorios.get()),
+                destinatarios=[direccion for direccion, variable in seleccion_destinatarios.items() if variable.get()])
+        except (ValueError, KeyError):
+            raise ValueError('Ingrese minutos enteros para las esperas y el intervalo.') from None
+        for espera in esperas.values():
+            validar_opciones(espera, opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
+        if opciones['activo'] and not opciones['destinatarios']:
+            raise ValueError('Seleccione al menos un destinatario de recordatorios.')
+        return opciones
+
+    def guardar_ajustes():
+        try:
+            guardar_configuracion(recoger_opciones())
+        except (ValueError, OSError) as error:
+            messagebox.showerror('No se guardaron los ajustes', str(error))
+            return
+        dialogo_datasuite(vista, 'Ajustes guardados',
+            'Se guardaron las esperas de mañana y tarde, el intervalo, el máximo y la selección de destinatarios.\n'
+            'No se envió ningún correo. Se aplicarán a informes nuevos.')
+
+    ttk.Button(seguimiento_frame, text='Guardar ajustes', command=guardar_ajustes).grid(
+        row=1, column=1, columnspan=2, padx=(10, 0), pady=(8, 0), sticky='w')
+    ttk.Label(seguimiento_frame, textvariable=resumen_destinatarios).grid(
+        row=1, column=3, columnspan=7, padx=(10, 0), pady=(8, 0), sticky='w')
+    ttk.Label(acciones, text='Horario Colombia: hasta las 15:30. Sin confirmación no significa no leído. Revise el corte antes de enviar.',
+              bootstyle='secondary').pack(anchor='w', pady=(5, 0))
+
     # ------------------------------------------------------
 
     consola = ttk.Labelframe(
 
-        vista,
+        division,
 
         text="Consola",
 
@@ -366,17 +577,20 @@ def crear_validacion_materiales(panel):
 
     )
 
-    consola.pack(
-
-        fill="x",
-
-        expand=False
-
-    )
-
-    # Mantiene una altura útil aunque la ventana tenga poco espacio vertical.
-    consola.configure(height=115)
+    consola.configure(height=160)
     consola.pack_propagate(False)
+    division.add(consola, weight=1)
+
+    def reservar_consola(event=None):
+        altura = division.winfo_height()
+        if altura < 200:
+            return
+        limite = max(60, altura - 155)
+        if division.sashpos(0) > limite:
+            division.sashpos(0, limite)
+
+    division.bind('<Configure>', reservar_consola)
+    vista.after_idle(reservar_consola)
 
     global txt_consola
 
@@ -384,7 +598,7 @@ def crear_validacion_materiales(panel):
 
         consola,
 
-        height=5,
+        height=8,
 
         wrap="word"
 
@@ -422,11 +636,86 @@ def crear_validacion_materiales(panel):
 
     )
 
+    cola_correo = queue.Queue()
+
     def escribir_correo(mensaje):
-        def actualizar():
-            txt_consola.insert("end", mensaje + "\n")
-            txt_consola.see("end")
-        vista.after(0, actualizar)
+        cola_correo.put(mensaje)
+
+    def actualizar_cola():
+        while True:
+            try:
+                mensaje = cola_correo.get_nowait()
+            except queue.Empty:
+                break
+            if callable(mensaje):
+                mensaje()
+            else:
+                txt_consola.insert('end', str(mensaje) + '\n')
+                txt_consola.see('end')
+        vista.after(300, actualizar_cola)
+
+    vista.after(300, actualizar_cola)
+    from modules.seguimiento_lectura import iniciar_monitor, consultar, cancelar
+    iniciar_monitor(escribir_correo)
+
+    def ver_seguimiento():
+        ventana = ttk.Toplevel(vista)
+        ventana.title('Seguimiento de correos')
+        configurar_icono_ventana(ventana)
+        ventana.geometry('1050x420')
+        columnas = ('creado', 'asunto', 'destinatario', 'rol', 'estado', 'intentos', 'maximo', 'proximo', 'detalle')
+        tabla = ttk.Treeview(ventana, columns=columnas, show='headings', height=12)
+        for campo in columnas:
+            tabla.heading(campo, text='Intentos de recordatorio' if campo == 'intentos' else campo.capitalize())
+            tabla.column(campo, width=140 if campo != 'detalle' else 330)
+        tabla.pack(fill='both', expand=True)
+        scroll_tabla = ttk.Scrollbar(ventana, orient='horizontal', command=tabla.xview)
+        scroll_tabla.pack(fill='x')
+        tabla.configure(xscrollcommand=scroll_tabla.set)
+        ttk.Label(ventana, text='Sin confirmación no significa no leído. Intento incierto: revisar Outlook, no se reintenta.').pack(anchor='w')
+
+        def refrescar():
+            tabla.delete(*tabla.get_children())
+            for fila in consultar():
+                estado = fila['estado']
+                detalle = fila['detalle']
+                if fila['estado_informe'] in ('revision_requerida', 'error_sin_reintento', 'sin_envio_verificado'):
+                    estado = fila['estado_informe']
+                    detalle = fila['detalle_informe']
+                if estado == 'intento_recordatorio':
+                    estado = 'intento incierto: revisar Outlook'
+                proximo = datetime.fromtimestamp(fila['proximo'], BOGOTA).strftime('%d/%m %H:%M') if fila['proximo'] and estado == 'esperando_confirmacion' else '—'
+                etiquetas = {
+                    'pendiente_envio': 'Pendiente de envío',
+                    'esperando_confirmacion': 'Sin confirmación de lectura',
+                    'lectura_confirmada': 'Lectura confirmada',
+                    'limite_alcanzado': 'Máximo alcanzado',
+                    'sin_recordatorios': 'Sin recordatorios',
+                    'jornada_finalizada': 'Jornada finalizada',
+                    'revision_requerida': 'Revisión requerida',
+                    'error_sin_reintento': 'Error: revisar Outlook',
+                    'sin_envio_verificado': 'Envío no verificado',
+                    'cancelado': 'Cancelado',
+                }
+                estado = etiquetas.get(estado, estado)
+                tabla.insert('', 'end', iid=str(fila['id']), values=(
+                    datetime.fromtimestamp(fila['creado'], BOGOTA).strftime('%d/%m %H:%M'),
+                    fila['asunto'], fila['destinatario'], fila['rol'], estado,
+                    fila['intentos'], fila['maximo'], proximo, detalle))
+
+        def detener_seleccionado():
+            seleccion = tabla.selection()
+            if seleccion and messagebox.askyesno('Cancelar seguimiento', '¿Detener futuros recordatorios del informe seleccionado? Los ya enviados no se retiran.', parent=ventana):
+                for identificador in seleccion:
+                    cancelar(int(identificador))
+                refrescar()
+
+        ttk.Button(ventana, text='Actualizar', command=refrescar).pack(side='left', padx=8, pady=8)
+        ttk.Button(ventana, text='Cancelar seleccionado', command=detener_seleccionado).pack(side='left', padx=8)
+        refrescar()
+
+    ttk.Button(seguimiento_frame, text='Ver seguimiento', command=ver_seguimiento).grid(
+        row=0, column=9, padx=(16, 0), sticky='w')
 
     def validar_fecha(texto):
         try:
@@ -436,7 +725,7 @@ def crear_validacion_materiales(panel):
             return False
 
     def ejecutar_correo(
-        inicial, final, automatico, presentacion, solicitar_lectura
+        inicial, final, automatico, presentacion, solicitar_lectura, opciones, proyecto
     ):
         try:
             import pythoncom
@@ -449,7 +738,7 @@ def crear_validacion_materiales(panel):
             pythoncom.CoInitialize()
             try:
                 escribir_correo("📂 Buscando el informe más reciente...")
-                informe = buscar_informe_mas_reciente(proyecto_actual)
+                informe = buscar_informe_mas_reciente(proyecto)
                 escribir_correo(f"📄 Informe: {informe.name}")
                 if presentacion == "Separados por hojas":
                     escribir_correo(
@@ -460,16 +749,19 @@ def crear_validacion_materiales(panel):
                     escribir_correo("📎 Adjuntando el libro completo...")
                     adjuntos = [informe]
                 escribir_correo(f"✅ Adjuntos preparados: {len(adjuntos)}")
-                crear_correo_outlook(
+                token = crear_correo_outlook(
                     inicial,
                     final,
                     adjuntos,
                     enviar_automaticamente=automatico,
                     modalidad_adjuntos=presentacion,
                     solicitar_confirmacion_lectura=solicitar_lectura,
+                    seguimiento=opciones,
                 )
+                if token:
+                    escribir_correo('Seguimiento registrado: ' + token)
                 if automatico:
-                    escribir_correo("✅ Correo enviado automáticamente.")
+                    escribir_correo('✅ Envío solicitado a Outlook: 8 destinatarios y 3 CC. No demuestra entrega.')
                 else:
                     escribir_correo(
                         "✅ Correo abierto en Outlook para revisión."
@@ -478,14 +770,9 @@ def crear_validacion_materiales(panel):
                 pythoncom.CoUninitialize()
         except Exception as error:
             escribir_correo(f"❌ ERROR: {error}")
-            vista.after(
-                0,
-                lambda: messagebox.showerror(
-                    "Error al generar correo", str(error)
-                ),
-            )
+            cola_correo.put(lambda detalle=str(error): messagebox.showerror('Error al generar correo', detalle))
         finally:
-            vista.after(0, lambda: boton_correo.configure(state="normal"))
+            cola_correo.put(lambda: boton_correo.configure(state='normal'))
 
     def iniciar_correo():
         inicial = fecha_inicial.get().strip()
@@ -500,20 +787,38 @@ def crear_validacion_materiales(panel):
         automatico = modo_correo.get() == "Envío automático"
         presentacion = modalidad_adjuntos.get()
         solicitar_lectura = confirmar_lectura.get()
-        if automatico:
-            continuar = messagebox.askyesno(
-                "Confirmar envío automático",
+        from modules.seguimiento_lectura import validar_opciones
+        try:
+            opciones = recoger_opciones()
+            validar_opciones(opciones['espera'], opciones['intervalo'], opciones['maximo'],
+                             opciones['destinatarios'])
+            if opciones['activo'] and not solicitar_lectura:
+                raise ValueError('Activa la solicitud de confirmación para usar recordatorios.')
+            if opciones['activo'] and not opciones['destinatarios']:
+                raise ValueError('Seleccione al menos un destinatario de recordatorios.')
+            if datetime.strptime(inicial, '%d/%m/%Y') > datetime.strptime(final, '%d/%m/%Y'):
+                raise ValueError('La fecha inicial no puede superar la final.')
+        except ValueError as error:
+            messagebox.showerror('Configuración no válida', str(error))
+            return
+        continuar = dialogo_datasuite(
+                vista,
+                'Confirmar generación de correo',
                 (
-                    "El correo se enviará directamente y no se abrirá "
-                    "para revisión.\n\n"
+                    'Correo inicial: 8 destinatarios principales y 3 CC.\n'
+                    + ('Envío automático.\n' if automatico else 'Se abrirá en Outlook: envíalo manualmente sin modificar los destinatarios.\n')
+                    + f'Recordatorios: {"Activados" if opciones["activo"] else "Desactivados"}; seleccionados {len(opciones["destinatarios"])}/11.\n'
+                    + f'Corte {opciones["corte"]}; espera {opciones["espera"]} min; intervalo {opciones["intervalo"]} min; máximo {opciones["maximo"]}. Hasta las 15:30 (Colombia).\n'
+                    + 'Para: ' + '; '.join(DESTINATARIOS) + '\nCC: ' + '; '.join(COPIAS) + '\n'
+                    +
                     f"Período: {inicial} al {final}\n"
                     f"Presentación: {presentacion}\n\n"
                     "¿Desea continuar?"
                 ),
-                icon="warning",
+                confirmar=True,
             )
-            if not continuar:
-                return
+        if not continuar:
+            return
 
         txt_consola.delete("1.0", "end")
         escribir_correo(
@@ -534,6 +839,8 @@ def crear_validacion_materiales(panel):
                 automatico,
                 presentacion,
                 solicitar_lectura,
+                opciones,
+                proyecto_actual,
             ),
             daemon=True,
         ).start()

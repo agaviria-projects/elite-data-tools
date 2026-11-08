@@ -10,23 +10,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 
-# Destinatarios aprobados para Validación MO vs. Materiales.
-# En modo revisión pueden verificarse o modificarse antes de enviar.
-DESTINATARIOS = [
-    "d.sanchez@eliteingenieros.com.co",
-    "l.toro@eliteingenieros.com.co",
-    "f.marin@eliteingenieros.com.co",
-    "a.villegas@eliteingenieros.com.co",
-    "y.patino@eliteingenieros.com.co",
-    "y.betancur@eliteingenieros.com.co",
-    "c.giraldo@eliteingenieros.com.co",
-    "veronica.garzon@eliteingenieros.com.co",
-    "dana.villa@eliteingenieros.com.co",
-]
-COPIAS = [
-    "d.leon@eliteingenieros.com.co",
-    "s.atencio@eliteingenieros.com.co",
-]
+# Una única lista aprobada, compartida con el motor y la interfaz.
+from modules.seguimiento_lectura import DESTINATARIOS, COPIAS
 
 
 def buscar_informe_mas_reciente(proyecto: Path) -> Path:
@@ -182,35 +167,54 @@ def crear_correo_outlook(
     enviar_automaticamente: bool = False,
     modalidad_adjuntos: str = "Libro completo",
     solicitar_confirmacion_lectura: bool = True,
-) -> None:
+    seguimiento: dict | None = None,
+) -> str | None:
     """Abre el correo para revisión o lo envía mediante Outlook Desktop."""
 
+    from modules.seguimiento_lectura import (
+        cuenta_autorizada, preparar, registrar, cambiar_informe,
+        comprobar, validar_opciones, guardar_configuracion,
+    )
     import win32com.client as win32
 
-    outlook = win32.Dispatch("Outlook.Application")
-    correo = outlook.CreateItem(0)
-    correo.To = ";".join(DESTINATARIOS)
-    correo.CC = ";".join(COPIAS)
-    correo.Subject = (
-        "[Validación MO vs. Materiales] Resultados del período "
-        f"{fecha_inicial} al {fecha_final}"
+    opciones = seguimiento or {}
+    activo = bool(opciones.get('activo', False))
+    espera = opciones.get('espera', 90)
+    intervalo = opciones.get('intervalo', 30)
+    maximo = opciones.get('maximo', 2)
+    seleccionados = opciones.get('destinatarios', DESTINATARIOS + COPIAS)
+    validar_opciones(espera, intervalo, maximo, seleccionados)
+    if activo and not solicitar_confirmacion_lectura:
+        raise ValueError('El seguimiento requiere solicitar confirmación de lectura.')
+    if activo and not seleccionados:
+        raise ValueError('Seleccione al menos un destinatario para recordatorios o desactive la opción.')
+    outlook = win32.gencache.EnsureDispatch('Outlook.Application', bForDemand=0)
+    cuenta = cuenta_autorizada(outlook)
+    asunto = (
+        'Validación posibles hallazgos descargues de información — Período '
+        f'{fecha_inicial} al {fecha_final}'
     )
-    correo.Importance = 1
-    # Outlook solicitará un comprobante cuando el destinatario abra el correo.
-    # La respuesta depende de la configuración de Outlook del destinatario.
-    correo.ReadReceiptRequested = bool(solicitar_confirmacion_lectura)
-    correo.HTMLBody = construir_html(
-        fecha_inicial,
-        fecha_final,
-        len(adjuntos),
-        modalidad_adjuntos,
-    )
-
-    for adjunto in adjuntos:
-        correo.Attachments.Add(str(adjunto.resolve()))
-
-    if enviar_automaticamente:
-        correo.Send()
-    else:
-        correo.Display()
+    token = None
+    if activo:
+        token, asunto, adjuntos = registrar(asunto, adjuntos, espera, intervalo, maximo, seleccionados)
+    configuracion = dict(opciones, activo=activo, espera=espera, intervalo=intervalo,
+                         maximo=maximo, destinatarios=seleccionados)
+    guardar_configuracion(configuracion)
+    try:
+        correo = preparar(outlook, cuenta, asunto,
+            construir_html(fecha_inicial, fecha_final, len(adjuntos), modalidad_adjuntos),
+            adjuntos, DESTINATARIOS, COPIAS, lectura=solicitar_confirmacion_lectura,
+            marca=token)
+        if enviar_automaticamente:
+            comprobar(correo, DESTINATARIOS, COPIAS)
+            if token:
+                cambiar_informe(token, 'original_solicitado')
+            correo.Send()
+        else:
+            correo.Display()
+    except Exception as error:
+        if token:
+            cambiar_informe(token, 'error_sin_reintento', str(error))
+        raise
+    return token
 
