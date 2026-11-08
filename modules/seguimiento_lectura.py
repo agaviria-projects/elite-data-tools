@@ -71,8 +71,8 @@ def validar_opciones(espera, intervalo, maximo, destinatarios):
         raise ValueError('La espera inicial debe ser un entero entre 1 y 1440 minutos.')
     if type(intervalo) is not int or not 1 <= intervalo <= 1440:
         raise ValueError('El intervalo debe ser un entero entre 1 y 1440 minutos.')
-    if type(maximo) is not int or not 1 <= maximo <= 2:
-        raise ValueError('Máximo aprobado: 1 o 2 recordatorios adicionales.')
+    if type(maximo) is not int or maximo < 1:
+        raise ValueError('El máximo de recordatorios debe ser un número entero mayor que cero.')
     if not isinstance(destinatarios, list) or len(set(destinatarios)) != len(destinatarios):
         raise ValueError('Lista de seguimiento no válida o repetida.')
     if not set(destinatarios).issubset(AUTORIZADOS):

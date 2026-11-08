@@ -500,8 +500,8 @@ def crear_validacion_materiales(panel):
     ttk.Label(seguimiento_frame, text='Intervalo (min):').grid(row=0, column=5, padx=(10, 4))
     ttk.Entry(seguimiento_frame, textvariable=intervalo_minutos, width=4).grid(row=0, column=6)
     ttk.Label(seguimiento_frame, text='Máximo:').grid(row=0, column=7, padx=(10, 4))
-    ttk.Combobox(seguimiento_frame, textvariable=maximo_recordatorios,
-                 values=['1', '2'], state='readonly', width=3).grid(row=0, column=8)
+    ttk.Entry(seguimiento_frame, textvariable=maximo_recordatorios,
+              width=4).grid(row=0, column=8)
     resumen_destinatarios = ttk.StringVar()
 
     def resumir_destinatarios(*args):
@@ -541,7 +541,7 @@ def crear_validacion_materiales(panel):
                 maximo=int(maximo_recordatorios.get()),
                 destinatarios=[direccion for direccion, variable in seleccion_destinatarios.items() if variable.get()])
         except (ValueError, KeyError):
-            raise ValueError('Ingrese minutos enteros para las esperas y el intervalo.') from None
+            raise ValueError('Ingrese números enteros para las esperas, el intervalo y el máximo de recordatorios.') from None
         for espera in esperas.values():
             validar_opciones(espera, opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
         if opciones['activo'] and not opciones['destinatarios']:
