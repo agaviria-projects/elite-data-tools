@@ -198,23 +198,19 @@ def ejecutar_validacion():
 
         txt_consola.update_idletasks()
 
-    ejecutar_secuencia(
-
-        proyecto_actual,
-
-        pasos,
-
-        callback=escribir
-
-    )
-
-    txt_consola.insert(
-
-        "end",
-
-        "\n🎉 Validación finalizada correctamente.\n"
-
-    )
+    try:
+        from modules.correo_validacion_materiales import cargar_control_exportacion
+        control = cargar_control_exportacion(proyecto_actual)
+        # Invalidar antes de lanzar: incluso un error de sintaxis/importación del
+        # validador debe impedir adjuntar el informe de una ejecución anterior.
+        previo = control.iniciar_ejecucion(proyecto_actual)['ejecucion']
+        ejecutar_secuencia(proyecto_actual, pasos, callback=escribir)
+        informe, datos = control.obtener_informe_verificado(proyecto_actual)
+        if datos['ejecucion'] == previo:
+            raise ValueError('No se registró una ejecución nueva. Revise los errores de la consola.')
+        escribir('\nValidación finalizada correctamente.\n' + control.resumen_control(informe, datos))
+    except Exception as error:
+        escribir('\nERROR: no se confirmó la validación. ' + str(error))
 
 
 # ==========================================================
@@ -725,20 +721,21 @@ def crear_validacion_materiales(panel):
             return False
 
     def ejecutar_correo(
-        inicial, final, automatico, presentacion, solicitar_lectura, opciones, proyecto
+        inicial, final, automatico, presentacion, solicitar_lectura, opciones, proyecto, ejecucion
     ):
         try:
             import pythoncom
             from modules.correo_validacion_materiales import (
-                buscar_informe_mas_reciente,
+                cargar_control_exportacion,
                 crear_correo_outlook,
                 generar_adjuntos_por_hoja,
             )
 
             pythoncom.CoInitialize()
             try:
-                escribir_correo("📂 Buscando el informe más reciente...")
-                informe = buscar_informe_mas_reciente(proyecto)
+                escribir_correo("📂 Verificando el informe y los exportes de la última validación...")
+                control = cargar_control_exportacion(proyecto)
+                informe = control.copiar_informe_verificado(proyecto, ejecucion)
                 escribir_correo(f"📄 Informe: {informe.name}")
                 if presentacion == "Separados por hojas":
                     escribir_correo(
@@ -801,11 +798,20 @@ def crear_validacion_materiales(panel):
         except ValueError as error:
             messagebox.showerror('Configuración no válida', str(error))
             return
+        try:
+            from modules.correo_validacion_materiales import cargar_control_exportacion
+            control = cargar_control_exportacion(proyecto_actual)
+            informe, datos_control = control.obtener_informe_verificado(proyecto_actual)
+            resumen_exportes = control.resumen_control(informe, datos_control)
+        except Exception as error:
+            messagebox.showerror('No se puede verificar el adjunto', str(error))
+            return
         continuar = dialogo_datasuite(
                 vista,
                 'Confirmar generación de correo',
                 (
-                    'Correo inicial: 8 destinatarios principales y 3 CC.\n'
+                    resumen_exportes + '\n\n'
+                    + 'Correo inicial: 8 destinatarios principales y 3 CC.\n'
                     + ('Envío automático.\n' if automatico else 'Se abrirá en Outlook: envíalo manualmente sin modificar los destinatarios.\n')
                     + f'Recordatorios: {"Activados" if opciones["activo"] else "Desactivados"}; seleccionados {len(opciones["destinatarios"])}/11.\n'
                     + f'Corte {opciones["corte"]}; espera {opciones["espera"]} min; intervalo {opciones["intervalo"]} min; máximo {opciones["maximo"]}. Hasta las 15:30 (Colombia).\n'
@@ -841,6 +847,7 @@ def crear_validacion_materiales(panel):
                 solicitar_lectura,
                 opciones,
                 proyecto_actual,
+                datos_control['ejecucion'],
             ),
             daemon=True,
         ).start()

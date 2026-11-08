@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import importlib.util
 import re
 from datetime import datetime
 from pathlib import Path
@@ -15,16 +16,18 @@ from modules.seguimiento_lectura import DESTINATARIOS, COPIAS
 
 
 def buscar_informe_mas_reciente(proyecto: Path) -> Path:
-    """Devuelve el último informe generado por validar_export_almacen.py."""
+    """Compatibilidad de nombre: ahora exige la última ejecución verificada."""
+    return cargar_control_exportacion(proyecto).obtener_informe_verificado(proyecto)[0]
 
-    carpeta = proyecto / "outputs"
-    archivos = list(carpeta.glob("validacion_mo_materiales_*.xlsx"))
-    if not archivos:
-        raise FileNotFoundError(
-            "No se encontró un informe en la carpeta outputs. "
-            "Ejecute primero 'Validar Materiales'."
-        )
-    return max(archivos, key=lambda archivo: archivo.stat().st_mtime)
+
+def cargar_control_exportacion(proyecto: Path):
+    ruta = Path(proyecto) / 'control_exportacion.py'
+    if not ruta.is_file():
+        raise FileNotFoundError('Falta Control_ANS_v5/control_exportacion.py. Instale el paquete completo.')
+    spec = importlib.util.spec_from_file_location('control_exportacion_datasuite', ruta)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
 
 
 def _nombre_seguro(nombre: str) -> str:
@@ -36,12 +39,12 @@ def generar_adjuntos_por_hoja(informe: Path) -> list[Path]:
     """
     Genera un libro por cada hoja de resultados.
 
-    Cada adjunto conserva la hoja correspondiente y GUIA_REGLAS, incluyendo
+    Cada adjunto conserva la hoja correspondiente, CONTROL_EXPORTACION y GUIA_REGLAS, incluyendo
     formato, filtros, tablas, colores, anchos y textos del informe original.
     """
 
     libro_origen = load_workbook(informe, read_only=True)
-    hojas = [h for h in libro_origen.sheetnames if h != "GUIA_REGLAS"]
+    hojas = [h for h in libro_origen.sheetnames if h not in {"GUIA_REGLAS", "CONTROL_EXPORTACION"}]
     libro_origen.close()
 
     comprobacion = load_workbook(informe, read_only=True)
@@ -57,7 +60,7 @@ def generar_adjuntos_por_hoja(informe: Path) -> list[Path]:
     adjuntos: list[Path] = []
     for numero, hoja_resultado in enumerate(hojas, start=1):
         libro = load_workbook(informe)
-        conservar = {"GUIA_REGLAS", hoja_resultado}
+        conservar = {"GUIA_REGLAS", "CONTROL_EXPORTACION", hoja_resultado}
         for hoja in list(libro.sheetnames):
             if hoja not in conservar:
                 del libro[hoja]

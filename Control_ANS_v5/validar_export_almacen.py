@@ -6,6 +6,7 @@
 
 from pathlib import Path
 from copy import copy
+from io import BytesIO
 import unicodedata
 import pandas as pd
 from datetime import datetime
@@ -14,6 +15,10 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import DataBarRule
 from openpyxl.worksheet.table import Table, TableStyleInfo
+from control_exportacion import (
+    iniciar_ejecucion, registrar_archivo, escribir_hoja_control,
+    finalizar_ejecucion, huella,
+)
 
 
 def normalizar_mo(valor):
@@ -52,6 +57,7 @@ print("📍 Archivo ejecutado:", __file__)
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
+control_exportacion = iniciar_ejecucion(BASE_DIR)
 ruta_base_mo = BASE_DIR / "data_master" / "RELACION_MO_MATERIALES.xlsx"
 
 # ============================================================
@@ -61,7 +67,9 @@ ruta_base_mo = BASE_DIR / "data_master" / "RELACION_MO_MATERIALES.xlsx"
 if not ruta_base_mo.exists():
     raise FileNotFoundError(f"No se encontró la base maestra: {ruta_base_mo}")
 
-df_base = pd.read_excel(ruta_base_mo, dtype=str)
+datos_maestra = ruta_base_mo.read_bytes()
+control_exportacion['maestra'] = dict(nombre=ruta_base_mo.name, sha256=huella(datos_maestra))
+df_base = pd.read_excel(BytesIO(datos_maestra), dtype=str)
 
 print("📘 Columnas detectadas en la base maestra:")
 print(list(df_base.columns))
@@ -119,18 +127,21 @@ df_list = []
 
 for archivo in archivos_txt:
     print(f"📄 Leyendo: {archivo.name}")
-
+    datos_txt = archivo.read_bytes()
+    modificado_txt = archivo.stat().st_mtime
     df_tmp = pd.read_csv(
-        archivo,
+        BytesIO(datos_txt),
         sep="|",            # ⚠️ ajusta si el separador es otro
         dtype=str,
         encoding="latin-1"  # típico en FENIX
     )
-
+    registrar_archivo(control_exportacion, archivo, datos_txt, df_tmp, modificado_txt)
     df_tmp["ARCHIVO_ORIGEN"] = archivo.name
     df_list.append(df_tmp)
 
 df_export = pd.concat(df_list, ignore_index=True)
+control_exportacion['registros'] = len(df_export)
+control_exportacion['pedidos'] = len(set(df_export['pedido'].dropna().astype(str).str.strip()) - {''})
 
 print("\n📦 Columnas detectadas en TXT:")
 print(list(df_export.columns))
@@ -2000,6 +2011,133 @@ def validar_reglas_actividades(df_export_in):
         })
 
     # ====================================================
+    # A30 Y CABLE: CONTROLES POR PEDIDO, SIN RESTRINGIR ACTIVIDAD.
+    # La cantidad se acumula por codigo exacto para detectar varias filas.
+    # Para cable no se suman BASE y P entre si, ni se suma el codigo A.
+    # La existencia del codigo A debe corresponder a la misma familia.
+    # ====================================================
+    bases_cable_25m = {"200410", "200411", "200492", "200493", "323739"}
+    codigos_a30_controlados = {"A30U", "A30R", "A30P"}
+    suministros_activan_c09 = {
+        "229550", "229551", "229558", "244201", "325642", "317768",
+    }
+    pedidos_con_excepcion_c09 = set()
+
+    for pedido_nuevo, grupo_nuevo in df.groupby("pedido"):
+        subzona_nueva = ", ".join(sorted(set(grupo_nuevo["subz"]) - {""}))
+        actividad_nueva = ", ".join(sorted(set(grupo_nuevo["actividad"]) - {""}))
+        tipos_nuevos = (
+            grupo_nuevo["tipo"].fillna("").astype(str).str.upper().str.strip()
+            if "tipo" in grupo_nuevo.columns else None
+        )
+        mo_nueva = (
+            grupo_nuevo.loc[tipos_nuevos.eq("CON")].copy()
+            if tipos_nuevos is not None else grupo_nuevo.copy()
+        )
+        for codigo_a30 in sorted(codigos_a30_controlados):
+            filas_a30 = mo_nueva.loc[mo_nueva["item_cont"].eq(codigo_a30)]
+            # Sumar escalares float de Python evita que ArrowStringArray
+            # conserve texto y concatene cantidades en ciertas versiones.
+            cantidad_a30 = sum(
+                convertir_numero(valor) for valor in filas_a30["cantidad"]
+            )
+            if cantidad_a30 > 1:
+                agregar_alerta_actividad(
+                    pedido_nuevo, subzona_nueva, actividad_nueva,
+                    "A30_CANTIDAD_MAYOR_1", [codigo_a30], [],
+                    "A30 solo se aplica 1 unidad. Si la cantidad es mayor a 1, "
+                    "revisar condición de 2 tableros o 2 cajas herméticas. "
+                    f"Ítem {codigo_a30}; cantidad total: {cantidad_a30:g}.",
+                )
+
+        suministros_nuevos = (
+            grupo_nuevo.loc[tipos_nuevos.eq("SUM")].copy()
+            if tipos_nuevos is not None else grupo_nuevo.copy()
+        )
+        # suminis es la fuente principal; item_res solo respalda exportes
+        # sin suministro informado. Una fila no se cuenta dos veces.
+        suministros_nuevos["_codigo_cable"] = suministros_nuevos["suminis"]
+        if tipos_nuevos is not None:
+            sin_codigo_cable = suministros_nuevos["_codigo_cable"].eq("")
+            suministros_nuevos.loc[sin_codigo_cable, "_codigo_cable"] = (
+                suministros_nuevos.loc[sin_codigo_cable, "item_res"]
+            )
+        cantidades_cable = suministros_nuevos.groupby("_codigo_cable")["cantidad"].agg(
+            lambda valores: sum(convertir_numero(valor) for valor in valores)
+        )
+        # groupby puede reconstruir el dtype de texto de la columna origen.
+        cantidades_cable = pd.to_numeric(cantidades_cable, errors="coerce").fillna(0)
+        # Regla independiente de actividad. Los requisitos se buscan en todo
+        # el pedido. C09 acompana a C01-C04 en ALEGA/ALEGN, no los reemplaza.
+        suministros_pedido_c09 = set(cantidades_cable.index) - {""}
+        activadores_c09 = sorted(suministros_pedido_c09 & suministros_activan_c09)
+        if activadores_c09:
+            pedidos_con_excepcion_c09.add(pedido_nuevo)
+            items_c09 = sorted(set(mo_nueva["item_cont"]) & {"C09U", "C09R"})
+            revisiones_c09 = sorted(
+                suministros_pedido_c09 & {"REVMD", "REVMIA", "REVMIB"}
+            )
+            faltantes_sum_c09 = []
+            if not revisiones_c09:
+                faltantes_sum_c09.append("REVMD o REVMIA o REVMIB")
+            faltantes_sum_c09.extend(
+                codigo for codigo in ("SIMCARD", "CALPRO01")
+                if codigo not in suministros_pedido_c09
+            )
+            cantidades_invalidas_c09 = [
+                f"{codigo}={cantidades_cable[codigo]:g}"
+                for codigo in activadores_c09 + ["SIMCARD", "CALPRO01"]
+                if codigo in cantidades_cable.index and cantidades_cable[codigo] != 1
+            ]
+            faltantes_mo_c09 = [] if items_c09 else ["C09U o C09R"]
+            if faltantes_sum_c09 or faltantes_mo_c09 or cantidades_invalidas_c09:
+                detalle_c09 = (
+                    "Con cualquiera de los suministros "
+                    + ", ".join(sorted(suministros_activan_c09))
+                    + ", debe existir REVMD o REVMIA o REVMIB, SIMCARD con "
+                    "cantidad 1, CALPRO01 con cantidad 1 y el ítem C09U o C09R "
+                    "en el mismo pedido, sin importar la actividad. Cada "
+                    "suministro activador debe tener cantidad total 1."
+                )
+                faltantes_c09 = faltantes_sum_c09 + faltantes_mo_c09
+                if faltantes_c09:
+                    detalle_c09 += " Falta: " + ", ".join(faltantes_c09) + "."
+                if cantidades_invalidas_c09:
+                    detalle_c09 += (
+                        " Cantidades distintas de 1: "
+                        + ", ".join(cantidades_invalidas_c09) + "."
+                    )
+                agregar_alerta_actividad(
+                    pedido_nuevo, subzona_nueva, actividad_nueva,
+                    "SUMINISTRO_REQUIERE_REV_SIMCARD_CALPRO01_C09",
+                    items_c09, faltantes_mo_c09, detalle_c09,
+                    suministros_encontrados=sorted(
+                        suministros_pedido_c09 & (
+                            suministros_activan_c09
+                            | {"REVMD", "REVMIA", "REVMIB", "SIMCARD", "CALPRO01"}
+                        )
+                    ),
+                    suministros_faltantes=faltantes_sum_c09,
+                )
+        for base_cable in sorted(bases_cable_25m):
+            codigo_cable_a = base_cable + "A"
+            if codigo_cable_a not in cantidades_cable.index:
+                continue
+            for codigo_cable in (base_cable, base_cable + "P"):
+                cantidad_cable = cantidades_cable.get(codigo_cable, 0.0)
+                if cantidad_cable > 25:
+                    agregar_alerta_actividad(
+                        pedido_nuevo, subzona_nueva, actividad_nueva,
+                        "CABLE_BASE_P_MAYOR_25_CON_A", [], [],
+                        f"El suministro de cable {codigo_cable} registra "
+                        f"{cantidad_cable:g} m y en el mismo pedido existe "
+                        f"{codigo_cable_a}. La cantidad del cable BASE o "
+                        "terminado en P no debe superar los 25 m. Revisar. "
+                        "No se suma la cantidad del suministro terminado en A.",
+                        suministros_encontrados=[codigo_cable, codigo_cable_a],
+                    )
+
+    # ====================================================
     # REGLAS GENERALES POR PEDIDO (TODAS LAS ACTIVIDADES)
     # ====================================================
     # Se revisan únicamente códigos U/R de mano de obra. La agrupación se
@@ -2846,6 +2984,10 @@ def validar_reglas_actividades(df_export_in):
                 "C04U", "C04R",
             }
             permitidos = set(permitidos_principales)
+            if pedido in pedidos_con_excepcion_c09:
+                # Excepcion exclusiva para C09; no elimina C01-C04 ni
+                # desactiva la alerta especifica de C05.
+                permitidos.update({"C09U", "C09R"})
             items_evaluables = {
                 item for item in items_cont
                 if not item.startswith("H04")
@@ -5817,6 +5959,29 @@ if "GUIA_REGLAS" in wb.sheetnames:
         ["Condición encontrada", "Regla aplicada", "Alerta generada"],
         [
             [
+                "Pedido con 229550, 229551, 229558, 244201, 325642 o 317768, en cualquier actividad",
+                "Cada suministro activador debe tener cantidad total 1. Exigir al menos "
+                "uno entre REVMD, REVMIA y REVMIB; SIMCARD y CALPRO01 con cantidad "
+                "total 1 cada uno; y C09U o C09R. En ALEGA/ALEGN, permitir C09 solo "
+                "en estos pedidos, conservando la exigencia de C01-C04 y la alerta de C05.",
+                "SUMINISTRO_REQUIERE_REV_SIMCARD_CALPRO01_C09 (ALERTA_ACTIVIDADES).",
+            ],
+            [
+                "A30U, A30R o A30P con cantidad total mayor a 1 en el mismo pedido",
+                "A30 solo se aplica 1 unidad. Si la cantidad es mayor a 1, revisar "
+                "condición de 2 tableros o 2 cajas herméticas. Se acumula por código exacto.",
+                "A30_CANTIDAD_MAYOR_1 (ALERTA_ACTIVIDADES).",
+            ],
+            [
+                "Cable 200410, 200411, 200492, 200493 o 323739, sin letra o "
+                "terminado en P, con más de 25 m y su correspondiente código A en el mismo pedido",
+                "La cantidad del código BASE o P no debe superar 25 m si existe "
+                "el código A de la misma familia. No se suman BASE y P entre sí, "
+                "ni los metros de A. Exactamente 25 m no genera esta alerta; "
+                "sin el correspondiente A tampoco. Aplica a todas las actividades.",
+                "CABLE_BASE_P_MAYOR_25_CON_A (ALERTA_ACTIVIDADES).",
+            ],
+            [
                 "Dos o más ítems diferentes entre A03U/R, A04U/R, A06U/R, A07U/R y A08U/R",
                 "Dos o más de estos ítems en el mismo pedido es una inconsistencia.",
                 "COMBINACION_ITEMS_A03_A08_INCONSISTENTE.",
@@ -6266,6 +6431,11 @@ if "ALERTA_CANTIDADES" in wb.sheetnames:
         )
 
 
+escribir_hoja_control(wb, control_exportacion)
 wb.save(archivo)
+wb.close()
+finalizar_ejecucion(BASE_DIR, archivo, control_exportacion)
+print(f"Control de exportación: {len(control_exportacion['archivos'])} TXT; "
+      f"{control_exportacion['registros']} registros. Adjunto vinculado a esta ejecución.")
 
 print(f"📁 Archivo generado: {archivo}")
