@@ -465,15 +465,20 @@ def crear_validacion_materiales(panel):
     except (ValueError, KeyError, OSError) as error:
         messagebox.showerror('Configuración de recordatorios',
             'No se pudo cargar la configuración guardada. Revísela antes de enviar.\n' + str(error))
-        configuracion = dict(activo=False, espera=90, intervalo=30, maximo=2,
+        from modules.seguimiento_lectura import INTERVALOS_POR_CORTE, MAXIMOS_POR_CORTE
+        configuracion = dict(activo=False, corte='Mañana',
                              destinatarios=DESTINATARIOS + COPIAS,
-                             corte='Mañana', esperas=dict(CORTES))
+                             esperas=dict(CORTES),
+                             intervalos=dict(INTERVALOS_POR_CORTE),
+                             maximos=dict(MAXIMOS_POR_CORTE))
     activar_seguimiento = ttk.BooleanVar(value=configuracion['activo'])
     corte = ttk.StringVar(value=configuracion['corte'])
     esperas_por_corte = {nombre: ttk.StringVar(value=str(configuracion['esperas'][nombre]))
                          for nombre in CORTES}
-    intervalo_minutos = ttk.StringVar(value=str(configuracion['intervalo']))
-    maximo_recordatorios = ttk.StringVar(value=str(configuracion['maximo']))
+    intervalos_por_corte = {nombre: ttk.StringVar(value=str(configuracion['intervalos'][nombre]))
+                            for nombre in CORTES}
+    maximos_por_corte = {nombre: ttk.StringVar(value=str(configuracion['maximos'][nombre]))
+                         for nombre in CORTES}
     seleccion_destinatarios = {
         direccion: ttk.BooleanVar(value=direccion in configuracion['destinatarios'])
         for direccion in DESTINATARIOS + COPIAS
@@ -491,13 +496,23 @@ def crear_validacion_materiales(panel):
     entrada_espera = ttk.Entry(seguimiento_frame,
         textvariable=esperas_por_corte[corte.get()], width=5)
     entrada_espera.grid(row=0, column=4)
-    selector_corte.bind('<<ComboboxSelected>>', lambda event:
-        entrada_espera.configure(textvariable=esperas_por_corte[corte.get()]))
     ttk.Label(seguimiento_frame, text='Intervalo (min):').grid(row=0, column=5, padx=(10, 4))
-    ttk.Entry(seguimiento_frame, textvariable=intervalo_minutos, width=4).grid(row=0, column=6)
+    entrada_intervalo = ttk.Entry(seguimiento_frame,
+        textvariable=intervalos_por_corte[corte.get()], width=4)
+    entrada_intervalo.grid(row=0, column=6)
     ttk.Label(seguimiento_frame, text='Máximo:').grid(row=0, column=7, padx=(10, 4))
-    ttk.Entry(seguimiento_frame, textvariable=maximo_recordatorios,
-              width=4).grid(row=0, column=8)
+    entrada_maximo = ttk.Entry(seguimiento_frame,
+        textvariable=maximos_por_corte[corte.get()], width=4)
+    entrada_maximo.grid(row=0, column=8)
+
+    def cambiar_corte(event=None):
+        # Cada corte conserva lo digitado, incluso antes de Guardar ajustes.
+        seleccionado = corte.get()
+        entrada_espera.configure(textvariable=esperas_por_corte[seleccionado])
+        entrada_intervalo.configure(textvariable=intervalos_por_corte[seleccionado])
+        entrada_maximo.configure(textvariable=maximos_por_corte[seleccionado])
+
+    selector_corte.bind('<<ComboboxSelected>>', cambiar_corte)
     resumen_destinatarios = ttk.StringVar()
 
     def resumir_destinatarios(*args):
@@ -530,16 +545,27 @@ def crear_validacion_materiales(panel):
 
     def recoger_opciones():
         try:
-            esperas = {nombre: int(variable.get().strip()) for nombre, variable in esperas_por_corte.items()}
-            opciones = dict(activo=activar_seguimiento.get(), corte=corte.get(),
-                esperas=esperas, espera=esperas[corte.get()],
-                intervalo=int(intervalo_minutos.get().strip()),
-                maximo=int(maximo_recordatorios.get()),
-                destinatarios=[direccion for direccion, variable in seleccion_destinatarios.items() if variable.get()])
+            esperas = {nombre: int(variable.get().strip())
+                       for nombre, variable in esperas_por_corte.items()}
+            intervalos = {nombre: int(variable.get().strip())
+                          for nombre, variable in intervalos_por_corte.items()}
+            maximos = {nombre: int(variable.get().strip())
+                       for nombre, variable in maximos_por_corte.items()}
+            seleccionado = corte.get()
+            opciones = dict(
+                activo=activar_seguimiento.get(), corte=seleccionado,
+                esperas=esperas, intervalos=intervalos, maximos=maximos,
+                espera=esperas[seleccionado],
+                intervalo=intervalos[seleccionado],
+                maximo=maximos[seleccionado],
+                destinatarios=[direccion for direccion, variable in seleccion_destinatarios.items()
+                               if variable.get()],
+            )
         except (ValueError, KeyError):
-            raise ValueError('Ingrese números enteros para las esperas, el intervalo y el máximo de recordatorios.') from None
-        for espera in esperas.values():
-            validar_opciones(espera, opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
+            raise ValueError('Ingrese números enteros para las esperas, los intervalos y los máximos de ambos cortes.') from None
+        for nombre in CORTES:
+            validar_opciones(esperas[nombre], intervalos[nombre], maximos[nombre],
+                             opciones['destinatarios'])
         if opciones['activo'] and not opciones['destinatarios']:
             raise ValueError('Seleccione al menos un destinatario de recordatorios.')
         return opciones
@@ -551,7 +577,7 @@ def crear_validacion_materiales(panel):
             messagebox.showerror('No se guardaron los ajustes', str(error))
             return
         dialogo_datasuite(vista, 'Ajustes guardados',
-            'Se guardaron las esperas de mañana y tarde, el intervalo, el máximo y la selección de destinatarios.\n'
+            'Se guardaron por separado la espera, el intervalo y el máximo de Mañana y Tarde; también los destinatarios.\n'
             'No se envió ningún correo. Se aplicarán a informes nuevos.')
 
     ttk.Button(seguimiento_frame, text='Guardar ajustes', command=guardar_ajustes).grid(
@@ -655,49 +681,115 @@ def crear_validacion_materiales(panel):
     iniciar_monitor(escribir_correo)
 
     def ver_seguimiento():
+        from modules.informe_seguimiento import (
+            validar_fechas, fecha_registro, estado_visible,
+            consultar_informe, exportar_informe,
+        )
         ventana = ttk.Toplevel(vista)
         ventana.title('Seguimiento de correos')
         configurar_icono_ventana(ventana)
-        ventana.geometry('1050x420')
+        ventana.geometry('1120x500')
+        ventana.minsize(760, 350)
+        filtros = ttk.Frame(ventana, padding=(10, 8))
+        filtros.pack(fill='x')
+        hoy = datetime.now(BOGOTA).strftime('%d/%m/%Y')
+        desde_informe = ttk.StringVar(value=hoy)
+        hasta_informe = ttk.StringVar(value=hoy)
+        ttk.Label(filtros, text='Desde:').pack(side='left', padx=(0, 5))
+        ttk.Entry(filtros, textvariable=desde_informe, width=12).pack(side='left')
+        ttk.Label(filtros, text='Hasta:').pack(side='left', padx=(12, 5))
+        ttk.Entry(filtros, textvariable=hasta_informe, width=12).pack(side='left')
+        ttk.Label(filtros, text='DD/MM/AAAA · fecha del envío original',
+                  bootstyle='secondary').pack(side='left', padx=12)
+        estado_consulta = ttk.StringVar(value='')
+        ttk.Label(ventana, textvariable=estado_consulta).pack(anchor='w', padx=10, pady=(0, 5))
+        marco_tabla = ttk.Frame(ventana)
+        marco_tabla.pack(fill='both', expand=True)
         columnas = ('creado', 'asunto', 'destinatario', 'rol', 'estado', 'intentos', 'maximo', 'proximo', 'detalle')
-        tabla = ttk.Treeview(ventana, columns=columnas, show='headings', height=12)
+        tabla = ttk.Treeview(marco_tabla, columns=columnas, show='headings', height=12)
         for campo in columnas:
             tabla.heading(campo, text='Intentos de recordatorio' if campo == 'intentos' else campo.capitalize())
             tabla.column(campo, width=140 if campo != 'detalle' else 330)
-        tabla.pack(fill='both', expand=True)
+        scroll_vertical = ttk.Scrollbar(marco_tabla, orient='vertical', command=tabla.yview)
+        scroll_vertical.pack(side='right', fill='y')
+        tabla.pack(side='left', fill='both', expand=True)
         scroll_tabla = ttk.Scrollbar(ventana, orient='horizontal', command=tabla.xview)
         scroll_tabla.pack(fill='x')
-        tabla.configure(xscrollcommand=scroll_tabla.set)
-        ttk.Label(ventana, text='Sin confirmación no significa no leído. Intento incierto: revisar Outlook, no se reintenta.').pack(anchor='w')
+        tabla.configure(xscrollcommand=scroll_tabla.set, yscrollcommand=scroll_vertical.set)
+        ttk.Label(ventana, text='Sin confirmación no significa no leído. Los envíos no verificados se filtran por creación.',
+                  bootstyle='secondary').pack(anchor='w', padx=10)
 
         def refrescar():
+            try:
+                inicio, fin = validar_fechas(desde_informe.get(), hasta_informe.get())
+                filas = [fila for fila in consultar() if inicio <= fecha_registro(fila) <= fin]
+            except Exception as error:
+                messagebox.showerror('No se pudo consultar el seguimiento', str(error), parent=ventana)
+                return
             tabla.delete(*tabla.get_children())
-            for fila in consultar():
+            for fila in filas:
                 estado = fila['estado']
-                detalle = fila['detalle']
+                etiqueta_estado, detalle = estado_visible(fila)
                 if fila['estado_informe'] in ('revision_requerida', 'error_sin_reintento', 'sin_envio_verificado'):
                     estado = fila['estado_informe']
                     detalle = fila['detalle_informe']
                 if estado == 'intento_recordatorio':
                     estado = 'intento incierto: revisar Outlook'
                 proximo = datetime.fromtimestamp(fila['proximo'], BOGOTA).strftime('%d/%m %H:%M') if fila['proximo'] and estado == 'esperando_confirmacion' else '—'
-                etiquetas = {
-                    'pendiente_envio': 'Pendiente de envío',
-                    'esperando_confirmacion': 'Sin confirmación de lectura',
-                    'lectura_confirmada': 'Lectura confirmada',
-                    'limite_alcanzado': 'Máximo alcanzado',
-                    'sin_recordatorios': 'Sin recordatorios',
-                    'jornada_finalizada': 'Jornada finalizada',
-                    'revision_requerida': 'Revisión requerida',
-                    'error_sin_reintento': 'Error: revisar Outlook',
-                    'sin_envio_verificado': 'Envío no verificado',
-                    'cancelado': 'Cancelado',
-                }
-                estado = etiquetas.get(estado, estado)
                 tabla.insert('', 'end', iid=str(fila['id']), values=(
                     datetime.fromtimestamp(fila['creado'], BOGOTA).strftime('%d/%m %H:%M'),
-                    fila['asunto'], fila['destinatario'], fila['rol'], estado,
+                    fila['asunto'], fila['destinatario'], fila['rol'], etiqueta_estado,
                     fila['intentos'], fila['maximo'], proximo, detalle))
+            estado_consulta.set(f'{len(filas)} registros · del {inicio:%d/%m/%Y} al {fin:%d/%m/%Y} · estados guardados en DataSuite')
+
+        def exportar():
+            try:
+                inicio, fin = validar_fechas(desde_informe.get(), hasta_informe.get())
+            except ValueError as error:
+                messagebox.showerror('Fechas del informe', str(error), parent=ventana)
+                return
+            destino = filedialog.asksaveasfilename(parent=ventana,
+                title='Guardar informe de confirmaciones de lectura',
+                initialdir=str(BASE / 'seguimiento_correos'),
+                initialfile=f'CONFIRMACIONES_LECTURA_{inicio:%Y-%m-%d}_al_{fin:%Y-%m-%d}_{datetime.now(BOGOTA):%H%M%S}.xlsx',
+                defaultextension='.xlsx', filetypes=[('Libro de Excel', '*.xlsx')],
+                confirmoverwrite=True)
+            if not destino:
+                return
+            boton_exportar.configure(state='disabled')
+            resultado = queue.Queue()
+
+            def generar():
+                try:
+                    datos = consultar_informe(inicio, fin)
+                    if not datos['registros']:
+                        resultado.put(('vacio', 'No hay registros de seguimiento para las fechas seleccionadas. No se creó ningún archivo.'))
+                        return
+                    archivo = exportar_informe(datos, destino, sobrescribir=True)
+                    resultado.put(('ok', str(archivo)))
+                except Exception as error:
+                    resultado.put(('error', str(error)))
+
+            def terminar():
+                if not ventana.winfo_exists():
+                    return
+                try:
+                    tipo, texto = resultado.get_nowait()
+                except queue.Empty:
+                    ventana.after(150, terminar)
+                    return
+                boton_exportar.configure(state='normal')
+                if tipo == 'error':
+                    messagebox.showerror('No se exportó el informe', texto, parent=ventana)
+                elif tipo == 'vacio':
+                    messagebox.showinfo('Informe de confirmaciones', texto, parent=ventana)
+                else:
+                    messagebox.showinfo('Informe exportado',
+                        'Se guardó el Excel con Resumen diario y Detalle.\n\n' + texto
+                        + '\n\nNo se envió ningún correo ni se modificaron los seguimientos.', parent=ventana)
+
+            threading.Thread(target=generar, daemon=True).start()
+            ventana.after(150, terminar)
 
         def detener_seleccionado():
             seleccion = tabla.selection()
@@ -707,6 +799,8 @@ def crear_validacion_materiales(panel):
                 refrescar()
 
         ttk.Button(ventana, text='Actualizar', command=refrescar).pack(side='left', padx=8, pady=8)
+        boton_exportar = ttk.Button(ventana, text='Exportar informe', command=exportar, bootstyle='success')
+        boton_exportar.pack(side='left', padx=8, pady=8)
         ttk.Button(ventana, text='Cancelar seleccionado', command=detener_seleccionado).pack(side='left', padx=8)
         refrescar()
 

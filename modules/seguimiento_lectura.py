@@ -29,6 +29,10 @@ COPIAS = ['d.leon@eliteingenieros.com.co', 's.atencio@eliteingenieros.com.co',
 AUTORIZADOS = set(DESTINATARIOS + COPIAS)
 BOGOTA = timezone(timedelta(hours=-5))
 CORTES = {'Mañana': 90, 'Tarde': 30}
+# Los tres ajustes se conservan por separado para cada corte. El valor cero
+# solo es válido como intervalo si se permite un único recordatorio.
+INTERVALOS_POR_CORTE = {'Mañana': 30, 'Tarde': 0}
+MAXIMOS_POR_CORTE = {'Mañana': 2, 'Tarde': 1}
 MAPI = 'http://schemas.microsoft.com/mapi/proptag/'
 # Propiedad propia: no modifica campos MAPI reservados ni el asunto visible.
 MARCA = ('http://schemas.microsoft.com/mapi/string/'
@@ -57,6 +61,11 @@ def conectar():
                 UNIQUE(token,destinatario))''')
             if 'correlacion' not in {r[1] for r in db.execute('PRAGMA table_info(informes)')}:
                 db.execute("ALTER TABLE informes ADD COLUMN correlacion TEXT NOT NULL DEFAULT 'asunto'")
+            if 'corte' not in {r[1] for r in db.execute('PRAGMA table_info(informes)')}:
+                db.execute("ALTER TABLE informes ADD COLUMN corte TEXT NOT NULL DEFAULT ''")
+            if 'confirmacion_detectada' not in {r[1] for r in db.execute('PRAGMA table_info(destinatarios)')}:
+                # NULL en históricos: no inventar la hora de una lectura anterior.
+                db.execute('ALTER TABLE destinatarios ADD COLUMN confirmacion_detectada REAL')
             db.execute('''CREATE TABLE IF NOT EXISTS mensajes_internos (
                 marca TEXT PRIMARY KEY, token TEXT NOT NULL, destinatario TEXT NOT NULL,
                 asunto TEXT NOT NULL, message_id TEXT DEFAULT '', report_tag TEXT DEFAULT '',
@@ -67,27 +76,64 @@ def conectar():
 
 
 def validar_opciones(espera, intervalo, maximo, destinatarios):
+    """Valida una configuración de recordatorios para un corte concreto."""
     if type(espera) is not int or not 1 <= espera <= 1440:
         raise ValueError('La espera inicial debe ser un entero entre 1 y 1440 minutos.')
-    if type(intervalo) is not int or not 1 <= intervalo <= 1440:
-        raise ValueError('El intervalo debe ser un entero entre 1 y 1440 minutos.')
     if type(maximo) is not int or maximo < 1:
         raise ValueError('El máximo de recordatorios debe ser un número entero mayor que cero.')
+    if type(intervalo) is not int or not 0 <= intervalo <= 1440:
+        raise ValueError('El intervalo debe ser un entero entre 0 y 1440 minutos.')
+    if intervalo == 0 and maximo != 1:
+        raise ValueError('El intervalo puede ser 0 únicamente cuando el máximo de recordatorios es 1.')
     if not isinstance(destinatarios, list) or len(set(destinatarios)) != len(destinatarios):
         raise ValueError('Lista de seguimiento no válida o repetida.')
     if not set(destinatarios).issubset(AUTORIZADOS):
         raise ValueError('Hay destinatarios de seguimiento no autorizados.')
 
 
+def normalizar_configuracion_cortes(opciones):
+    """Admite ajustes antiguos y garantiza esperas, intervalos y máximos por corte.
+
+    Los ajustes antiguos tenían intervalos y máximos compartidos. Al migrarlos,
+    se preserva ese valor en ambos cortes, sin modificar la operación previa.
+    """
+    datos = dict(opciones)
+    if 'corte' not in datos:
+        datos['corte'] = 'Tarde' if datos.get('espera') == CORTES['Tarde'] else 'Mañana'
+    corte = datos['corte']
+    if corte not in CORTES:
+        raise ValueError('Configuración de cortes no válida.')
+
+    if 'esperas' not in datos:
+        datos['esperas'] = dict(CORTES)
+        datos['esperas'][corte] = datos.get('espera', CORTES[corte])
+    if 'intervalos' not in datos:
+        # Versión anterior: un mismo intervalo para mañana y tarde.
+        anterior = datos.get('intervalo', INTERVALOS_POR_CORTE[corte])
+        datos['intervalos'] = {nombre: anterior for nombre in CORTES}
+    if 'maximos' not in datos:
+        # Versión anterior: un mismo máximo para mañana y tarde.
+        anterior = datos.get('maximo', MAXIMOS_POR_CORTE[corte])
+        datos['maximos'] = {nombre: anterior for nombre in CORTES}
+
+    for campo in ('esperas', 'intervalos', 'maximos'):
+        if not isinstance(datos[campo], dict) or set(datos[campo]) != set(CORTES):
+            raise ValueError('La configuración guardada de cortes no es válida.')
+
+    destinatarios = datos.get('destinatarios')
+    for nombre in CORTES:
+        validar_opciones(datos['esperas'][nombre], datos['intervalos'][nombre],
+                         datos['maximos'][nombre], destinatarios)
+
+    # El corte seleccionado define los valores que se aplican al nuevo informe.
+    datos['espera'] = datos['esperas'][corte]
+    datos['intervalo'] = datos['intervalos'][corte]
+    datos['maximo'] = datos['maximos'][corte]
+    return datos
+
+
 def guardar_configuracion(opciones):
-    validar_opciones(opciones['espera'], opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
-    if 'esperas' in opciones:
-        if opciones.get('corte') not in CORTES or set(opciones['esperas']) != set(CORTES):
-            raise ValueError('Configuración de cortes no válida.')
-        for espera in opciones['esperas'].values():
-            validar_opciones(espera, opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
-        if opciones['espera'] != opciones['esperas'][opciones['corte']]:
-            raise ValueError('La espera seleccionada no coincide con el corte.')
+    opciones = normalizar_configuracion_cortes(opciones)
     RAIZ.mkdir(parents=True, exist_ok=True)
     temporal = RAIZ / ('config-' + uuid.uuid4().hex + '.tmp')
     temporal.write_text(json.dumps(opciones, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -95,24 +141,16 @@ def guardar_configuracion(opciones):
 
 
 def cargar_configuracion():
-    defecto = dict(activo=True, espera=90, intervalo=30, maximo=2,
-                   destinatarios=DESTINATARIOS + COPIAS,
-                   corte='Mañana', esperas=dict(CORTES))
+    defecto = dict(
+        activo=True, corte='Mañana', destinatarios=DESTINATARIOS + COPIAS,
+        esperas=dict(CORTES), intervalos=dict(INTERVALOS_POR_CORTE),
+        maximos=dict(MAXIMOS_POR_CORTE),
+    )
     ruta = RAIZ / 'configuracion.json'
     if not ruta.exists():
-        return defecto
+        return normalizar_configuracion_cortes(defecto)
     opciones = json.loads(ruta.read_text(encoding='utf-8'))
-    validar_opciones(opciones['espera'], opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
-    if 'esperas' not in opciones:
-        opciones['corte'] = 'Tarde' if opciones['espera'] == 30 else 'Mañana'
-        opciones['esperas'] = dict(CORTES)
-        opciones['esperas'][opciones['corte']] = opciones['espera']
-    if opciones.get('corte') not in CORTES or set(opciones['esperas']) != set(CORTES):
-        raise ValueError('Configuración guardada de cortes no válida.')
-    for espera in opciones['esperas'].values():
-        validar_opciones(espera, opciones['intervalo'], opciones['maximo'], opciones['destinatarios'])
-    opciones['espera'] = opciones['esperas'][opciones['corte']]
-    return opciones
+    return normalizar_configuracion_cortes(opciones)
 
 
 def cuenta_autorizada(outlook):
@@ -185,8 +223,10 @@ def preparar(outlook, cuenta, asunto, cuerpo, adjuntos, para, copias=(), lectura
     return correo
 
 
-def registrar(asunto_base, adjuntos, espera, intervalo, maximo, seleccionados):
+def registrar(asunto_base, adjuntos, espera, intervalo, maximo, seleccionados, corte=''):
     validar_opciones(espera, intervalo, maximo, seleccionados)
+    if corte not in ('', *CORTES):
+        raise ValueError('Corte de seguimiento no válido.')
     token = 'DS-' + uuid.uuid4().hex
     carpeta = RAIZ / token
     carpeta.mkdir(parents=True)
@@ -198,9 +238,9 @@ def registrar(asunto_base, adjuntos, espera, intervalo, maximo, seleccionados):
     asunto = asunto_base
     with conectar() as db:
         db.execute('''INSERT INTO informes
-            (token,asunto,creado,estado,espera,intervalo,maximo,adjuntos,correlacion)
-            VALUES (?,?,?,'preparado',?,?,?,?,'interno')''',
-            (token, asunto, time.time(), espera, intervalo, maximo, json.dumps(copias)))
+            (token,asunto,creado,estado,espera,intervalo,maximo,adjuntos,correlacion,corte)
+            VALUES (?,?,?,'preparado',?,?,?,?,'interno',?)''',
+            (token, asunto, time.time(), espera, intervalo, maximo, json.dumps(copias), corte))
         for direccion in DESTINATARIOS + COPIAS:
             db.execute('''INSERT INTO destinatarios
                 (token,destinatario,rol,activo,estado) VALUES (?,?,?,?,?)''',
@@ -307,13 +347,17 @@ def cambiar_receptor(identificador, estado, detalle=''):
 def consultar():
     with conectar() as db:
         return [dict(r) for r in db.execute('''SELECT d.*,i.asunto,i.creado,i.enviado,i.cierre,
-            i.espera,i.intervalo,i.maximo,i.estado AS estado_informe,i.detalle AS detalle_informe
+            i.espera,i.intervalo,i.maximo,i.corte,i.estado AS estado_informe,i.detalle AS detalle_informe
             FROM destinatarios d JOIN informes i ON i.token=d.token ORDER BY i.creado DESC,d.id''')]
 
 
 def cancelar(identificador):
     with conectar() as db:
-        db.execute("UPDATE destinatarios SET activo=0,estado='cancelado',detalle='Cancelado por el usuario' WHERE id=?", (identificador,))
+        db.execute('''UPDATE destinatarios SET activo=0,
+            estado=CASE WHEN estado='lectura_confirmada' OR confirmacion_detectada IS NOT NULL
+                THEN 'lectura_confirmada' ELSE 'cancelado' END,
+            detalle=CASE WHEN estado='lectura_confirmada' OR confirmacion_detectada IS NOT NULL
+                THEN detalle ELSE 'Cancelado por el usuario' END WHERE id=?''', (identificador,))
 
 
 def mensajes(carpeta, token):
@@ -451,11 +495,15 @@ def reclamar(identificador, ahora):
 
 def registrar_lecturas(token, lecturas):
     nuevas = []
+    detectada = time.time()
     with conectar() as db:
         for direccion in lecturas:
             cursor = db.execute('''UPDATE destinatarios SET estado='lectura_confirmada',
-                detalle='Comprobante de lectura recibido.' WHERE token=? AND destinatario=?
-                AND estado NOT IN ('cancelado','sin_recordatorios','lectura_confirmada')''', (token, direccion))
+                detalle='Comprobante de lectura recibido.',
+                confirmacion_detectada=COALESCE(confirmacion_detectada,?)
+                WHERE token=? AND destinatario=?
+                AND estado NOT IN ('cancelado','sin_recordatorios','lectura_confirmada')''',
+                (detectada, token, direccion))
             if cursor.rowcount:
                 nuevas.append(direccion)
     return nuevas
@@ -508,7 +556,9 @@ def procesar(outlook, cuenta, informe, publicar):
             sin_verificar = db.execute('''SELECT m.marca,d.proximo FROM mensajes_internos m
                 JOIN destinatarios d ON d.token=m.token AND d.destinatario=m.destinatario
                 WHERE m.token=? AND m.enviado IS NULL AND d.intentos>0
-                AND m.marca=m.token||'|'||m.destinatario||'|'||d.intentos''', (token,)).fetchone()
+                AND d.estado='esperando_confirmacion' AND d.intentos<?
+                AND m.marca=m.token||'|'||m.destinatario||'|'||d.intentos''',
+                (token, informe['maximo'])).fetchone()
     bandeja = cuenta.DeliveryStore.GetDefaultFolder(6)
     lecturas, _, avisos = comprobantes(bandeja, token, outlook)
     for direccion in registrar_lecturas(token, lecturas):
@@ -545,7 +595,6 @@ def procesar(outlook, cuenta, informe, publicar):
             '<h3 style="color:#00995c">Recordatorio de revisión</h3>'
             '<p>No se ha recibido confirmación de lectura de este informe. '
             'Se comparte nuevamente para facilitar su consulta.</p>'
-            '<p>La ausencia de confirmación no demuestra que el correo no se haya abierto.</p>'
             f'<p>Informe: {html.escape(informe["asunto"])}</p></body></html>',
             adjuntos, [fila['destinatario']], lectura=True, marca=marca)
         # Revisión individual justo antes de enviar. No usar ReplyAll/Forward.
@@ -560,10 +609,19 @@ def procesar(outlook, cuenta, informe, publicar):
         if not reclamar(fila['id'], instante):
             continue
         correo.Send()
+        # Si este fue el último recordatorio, cerrar la programación ahora.
+        # La comprobación de lectura posterior puede cambiar el estado a
+        # 'lectura_confirmada', pero nunca habilita un nuevo envío.
+        ultimo = numero >= informe['maximo']
+        estado_siguiente = 'limite_alcanzado' if ultimo else 'esperando_confirmacion'
+        proximo = None if ultimo else instante + informe['intervalo'] * 60
+        detalle = f'Recordatorio {numero} solicitado a Outlook; no demuestra entrega.'
+        if ultimo:
+            detalle += ' Máximo alcanzado; no se programan más recordatorios.'
         with conectar() as db:
-            db.execute("UPDATE destinatarios SET estado='esperando_confirmacion',proximo=?,detalle=? WHERE id=? AND estado='intento_recordatorio'",
-                (instante + informe['intervalo'] * 60,
-                 f'Recordatorio {numero} solicitado a Outlook; no demuestra entrega.', fila['id']))
+            db.execute('''UPDATE destinatarios SET estado=?,proximo=?,detalle=?
+                WHERE id=? AND estado='intento_recordatorio' ''',
+                (estado_siguiente, proximo, detalle, fila['id']))
         publicar(f'{token}: recordatorio {numero}/{informe["maximo"]} solo a {fila["destinatario"]}.')
 
 
