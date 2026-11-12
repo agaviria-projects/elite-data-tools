@@ -451,6 +451,47 @@ DIAS_PACTADOS_SO_OCC = {
 
 
 # ------------------------------------------------------------
+# ANS ELITE — ORIENTE Y NORDESTE (TABLA OPERATIVA ORI-NOR)
+# Días hábiles entregados por el responsable de programación.
+# Esta tabla es independiente de EPM y no modifica otras subzonas.
+# ------------------------------------------------------------
+DIAS_PACTADOS_ORI_NOR = {
+    "ACREV":   {"URBANO": 4,  "RURAL": 4},
+    "ALEGA":   {"URBANO": 7,  "RURAL": 10},
+    "ALEGN":   {"URBANO": 7,  "RURAL": 10},
+    "AGPE":    {"URBANO": 6,  "RURAL": 6},
+    "ARTER":   {"URBANO": 4,  "RURAL": 8},
+    "AEJDO":   {"URBANO": 8,  "RURAL": 13},
+    "ARTER P": {"URBANO": 4,  "RURAL": 8},
+    "DIPRE":   {"URBANO": 13, "RURAL": 13},
+    "DSPRE":   {"URBANO": 13, "RURAL": 13},
+    "INPRE":   {"URBANO": 13, "RURAL": 13},
+    "REEQU":   {"URBANO": 13, "RURAL": 13},
+    "ACAMN":   {"URBANO": 6,  "RURAL": 9},
+    "ALECA":   {"URBANO": 6,  "RURAL": 9},
+    "AMRTR":   {"URBANO": 9,  "RURAL": 14},
+}
+
+# Descripciones para la tabla de trazabilidad del Excel.
+DESCRIPCIONES_ANS_ORI_NOR = {
+    "ACREV": "Puntos de Conexión",
+    "ALEGA": "Conexión Servicio de Energía Residencial",
+    "ALEGN": "Conexión Servicio de Energía No res",
+    "AGPE": "Legalización Auto generadores",
+    "ARTER": "Habilitación Vivienda (Replanteo)",
+    "AEJDO": "Habilitación Vivienda (Ejecución)",
+    "ARTER P": "Prepago (Replanteo)",
+    "DIPRE": "Retiro prepago",
+    "DSPRE": "Descarga prepago",
+    "INPRE": "Prepago (Ejecución)",
+    "REEQU": "Trabajos Prepago",
+    "ACAMN": "Reformas Comercial",
+    "ALECA": "Reformas Residencia",
+    "AMRTR": "Movimiento de Redes y transformadores",
+}
+
+
+# ------------------------------------------------------------
 # PLAZOS CONTRACTUALES EPM — TABLA ENTREGADA POR EL ANALISTA
 # Se aplica a las subzonas del informe. Los plazos ELITE se conservan.
 # ALEMN no tiene regla en la tabla recibida: NO se le asigna otro plazo.
@@ -505,37 +546,25 @@ def calcular_ans_epm(row, fecha_corte):
 
 
 def dias_pactados(row):
-
+    """Selecciona el ANS ELITE por actividad, tipo de dirección y subzona."""
     act = str(row.get("ACTIVIDAD", "")).strip().upper()
-
     tipo = str(row.get("TIPO_DIRECCION", "")).strip().upper()
-
     subzona = str(row.get("SUBZONA", "")).strip().upper()
 
+    # Normalizar posibles representaciones del código ARTER P, sin
+    # modificar el valor original ni crear una regla para otras zonas.
+    if subzona in ("ORIENTE", "NORDESTE") and act in ("ARTERP", "ARTER_P", "ARTER-P"):
+        act = "ARTER P"
 
-
-    # SUROESTE y OCCIDENTE utilizan su tabla contractual específica.
-
-    # Las demás zonas conservan la tabla base vigente.
-
-    if subzona in ["SUROESTE", "OCCIDENTE"]:
-
+    if subzona in ("ORIENTE", "NORDESTE"):
+        mapa = DIAS_PACTADOS_ORI_NOR
+    elif subzona in ("SUROESTE", "OCCIDENTE"):
         mapa = DIAS_PACTADOS_SO_OCC
-
     else:
-
+        # Comportamiento vigente para METROPOLITANA SUR y zonas no previstas.
         mapa = DIAS_PACTADOS_MAP
 
-
-
-    if act in mapa and tipo in mapa[act]:
-
-        return mapa[act][tipo]
-
-
-
-    return 0
-
+    return mapa.get(act, {}).get(tipo, 0)
 
 
 df["DIAS_PACTADOS"] = df.apply(dias_pactados, axis=1)
@@ -1831,7 +1860,15 @@ else:
 
         df["ESTADO"] = df.apply(calcular_estado, axis=1)
 
-
+        # Diagnóstico orientado a evitar pedidos ORI-NOR con 0 días sin detectar.
+        sin_regla_ori_nor = df.loc[
+            df["SUBZONA"].isin(["ORIENTE", "NORDESTE"])
+            & df["DIAS_PACTADOS"].eq(0),
+            ["SUBZONA", "ACTIVIDAD", "TIPO_DIRECCION"],
+        ]
+        if not sin_regla_ori_nor.empty:
+            print("⚠️ Actividades ORIENTE/NORDESTE sin regla ANS ELITE:")
+            print(sin_regla_ori_nor.value_counts().to_string())
 
         print("📍 Subzonas finales incluidas en FENIX_ANS:")
 
@@ -2455,6 +2492,16 @@ datos = [
 for f in datos:
 
     ws_conf.append(f)
+
+# La hoja de consulta refleja exactamente la tabla usada para ORIENTE/NORDESTE.
+for actividad, plazos in DIAS_PACTADOS_ORI_NOR.items():
+    ws_conf.append([
+        "ORIENTE / NORDESTE",
+        actividad,
+        DESCRIPCIONES_ANS_ORI_NOR[actividad],
+        plazos["URBANO"],
+        plazos["RURAL"],
+    ])
 
 
 
