@@ -199,7 +199,9 @@ def crear_correo_outlook(
     )
     token = None
     if activo:
-        token, asunto, adjuntos = registrar(asunto, adjuntos, espera, intervalo, maximo, seleccionados)
+        token, asunto, adjuntos = registrar(
+            asunto, adjuntos, espera, intervalo, maximo, seleccionados,
+            corte=opciones.get('corte', ''))
     configuracion = dict(opciones, activo=activo, espera=espera, intervalo=intervalo,
                          maximo=maximo, destinatarios=seleccionados)
     guardar_configuracion(configuracion)

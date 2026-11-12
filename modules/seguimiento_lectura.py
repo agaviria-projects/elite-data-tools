@@ -23,6 +23,7 @@ DESTINATARIOS = [
     'f.marin@eliteingenieros.com.co', 'a.villegas@eliteingenieros.com.co',
     'y.patino@eliteingenieros.com.co', 'y.betancur@eliteingenieros.com.co',
     'c.giraldo@eliteingenieros.com.co', 'veronica.garzon@eliteingenieros.com.co',
+    'r.ballesteros@eliteingenieros.com.co', 'c.bedoya@eliteingenieros.com.co',
 ]
 COPIAS = ['d.leon@eliteingenieros.com.co', 's.atencio@eliteingenieros.com.co',
           'diego.durango@eliteingenieros.com.co']
