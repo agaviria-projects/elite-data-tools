@@ -13,7 +13,7 @@ class ConfiguracionEjecucion:
     solo_primer_correo: bool = False
     abrir_outlook: bool = True
     enviar_automaticamente: bool = False
-    zona: str = "METROPOLITANA"
+    zonas: tuple[str, ...] = ("METROPOLITANA",)
 
 
 @dataclass(frozen=True)

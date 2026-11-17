@@ -7,6 +7,7 @@ import ttkbootstrap as ttk
 from ui.base_view import crear_vista
 
 from modules.informe_ans.config.correos import MODO_PRUEBA
+from modules.informe_ans.config.zonas import ZONAS
 from modules.informe_ans.config.parametros import (
     ARCHIVO_FENIX,
     CARPETA_HTML,
@@ -252,36 +253,6 @@ def crear_seguimiento_ans(panel) -> None:
         side="left",
     )
 
-    ttk.Label(
-        fila_superior,
-        text="Zona:",
-    ).pack(
-        side="left",
-        padx=(20, 10),
-    )
-
-    zona_seleccionada = ttk.StringVar(
-        value="METROPOLITANA"
-    )
-
-    vista.zona_seleccionada = zona_seleccionada
-
-    cmb_zona = ttk.Combobox(
-        fila_superior,
-        textvariable=zona_seleccionada,
-        values=[
-            "METROPOLITANA",
-            "SUROESTE",
-            "OCCIDENTE",
-            "TODAS",
-        ],
-        state="readonly",
-        width=18,
-    )
-
-    cmb_zona.pack(
-        side="left",
-    )
     boton_generar = ttk.Button(
         fila_superior,
         text="▶ Generar correos",
@@ -293,6 +264,180 @@ def crear_seguimiento_ans(panel) -> None:
     boton_generar.pack(
         side="right",
     )
+
+    fila_zonas = ttk.Frame(
+        acciones
+    )
+
+    fila_zonas.pack(
+        fill="x",
+        pady=(12, 0),
+    )
+
+    ttk.Label(
+        fila_zonas,
+        text="Zonas:",
+    ).pack(
+        side="left",
+        padx=(0, 10),
+    )
+
+    variables_zona = {}
+    controles_zona = {}
+
+    seleccionar_todas = ttk.BooleanVar(
+        value=False
+    )
+
+    for nombre_zona, configuracion_zona in ZONAS.items():
+
+        variable_zona = ttk.BooleanVar(
+            value=(
+                nombre_zona == "METROPOLITANA"
+            )
+        )
+
+        variables_zona[nombre_zona] = variable_zona
+
+        texto_zona = nombre_zona
+
+        if not configuracion_zona.get(
+            "envio",
+            False,
+        ):
+            texto_zona += " (solo revisión)"
+
+        def sincronizar_todas_autorizadas():
+            """
+            Mantiene el interruptor 'Todas las autorizadas'
+            sincronizado con las selecciones individuales.
+            """
+
+            clave_modo = (
+                "envio"
+                if modo_ejecucion.get() == "Envío automático"
+                else "revision"
+            )
+
+            zonas_activas = [
+                nombre
+                for nombre, cfg in ZONAS.items()
+                if cfg.get(
+                    clave_modo,
+                    False,
+                )
+            ]
+
+            seleccionar_todas.set(
+                all(
+                    variables_zona[nombre].get()
+                    for nombre in zonas_activas
+                )
+            )
+
+        chk_zona = ttk.Checkbutton(
+            fila_zonas,
+            text=texto_zona,
+            variable=variable_zona,
+            command=sincronizar_todas_autorizadas,
+            bootstyle="success-round-toggle",
+        )
+
+        chk_zona.pack(
+            side="left",
+            padx=(0, 10),
+        )
+
+        controles_zona[
+            nombre_zona
+        ] = chk_zona
+
+    vista.variables_zona = variables_zona
+    vista.seleccionar_todas = seleccionar_todas
+
+    def actualizar_todas_zonas():
+        """
+        Marca o desmarca únicamente las zonas autorizadas.
+        """
+
+        nuevo_estado = seleccionar_todas.get()
+
+        for nombre_zona, configuracion_zona in ZONAS.items():
+
+            clave_modo = (
+                "envio"
+                if modo_ejecucion.get() == "Envío automático"
+                else "revision"
+            )
+
+            if configuracion_zona.get(
+                clave_modo,
+                False,
+            ):
+                variables_zona[
+                    nombre_zona
+                ].set(
+                    nuevo_estado
+                )
+
+    ttk.Checkbutton(
+        fila_zonas,
+        text="Todas disponibles",
+        variable=seleccionar_todas,
+        command=actualizar_todas_zonas,
+        bootstyle="info-round-toggle",
+    ).pack(
+        side="right",
+    )
+
+    def actualizar_disponibilidad_zonas(event=None):
+        """
+        En revisión habilita las zonas preparadas para prueba.
+        En envío automático bloquea las no autorizadas.
+        """
+
+        es_envio = (
+            modo_ejecucion.get()
+            == "Envío automático"
+        )
+
+        clave_modo = (
+            "envio"
+            if es_envio
+            else "revision"
+        )
+
+        for nombre_zona, cfg in ZONAS.items():
+
+            disponible = cfg.get(
+                clave_modo,
+                False,
+            )
+
+            controles_zona[
+                nombre_zona
+            ].configure(
+                state=(
+                    "normal"
+                    if disponible
+                    else "disabled"
+                )
+            )
+
+            if not disponible:
+                variables_zona[
+                    nombre_zona
+                ].set(False)
+
+        seleccionar_todas.set(False)
+        sincronizar_todas_autorizadas()
+
+    cmb_modo.bind(
+        "<<ComboboxSelected>>",
+        actualizar_disponibilidad_zonas,
+    )
+
+    actualizar_disponibilidad_zonas()
 
     fila_inferior = ttk.Frame(acciones)
 
@@ -477,7 +622,7 @@ def crear_seguimiento_ans(panel) -> None:
     def ejecutar_proceso(
         enviar_automaticamente: bool,
         procesar_solo_primero: bool,
-        zona: str,
+        zonas: tuple[str, ...],
     ) -> None:
         """
         Ejecuta el controlador sin bloquear DataSuite.
@@ -495,7 +640,7 @@ def crear_seguimiento_ans(panel) -> None:
                 solo_primer_correo=procesar_solo_primero,
                 abrir_outlook=True,
                 enviar_automaticamente=enviar_automaticamente,
-                zona=zona,
+                zonas=zonas,
                 informar=escribir_consola,
             )
 
@@ -535,9 +680,19 @@ def crear_seguimiento_ans(panel) -> None:
             modo_ejecucion.get()
         )
 
-        zona_actual = (
-            zona_seleccionada.get()
+        zonas_actuales = tuple(
+            nombre_zona
+            for nombre_zona, variable_zona
+            in variables_zona.items()
+            if variable_zona.get()
         )
+
+        if not zonas_actuales:
+            messagebox.showwarning(
+                "Zona requerida",
+                "Seleccione al menos una zona autorizada.",
+            )
+            return
         enviar_automaticamente = (
             modo_seleccionado
             == "Envío automático"
@@ -545,19 +700,35 @@ def crear_seguimiento_ans(panel) -> None:
 
         if enviar_automaticamente:
 
+            zonas_bloqueadas = [
+                zona
+                for zona in zonas_actuales
+                if not ZONAS[zona].get(
+                    "envio",
+                    False,
+                )
+            ]
+
+            if zonas_bloqueadas:
+                messagebox.showerror(
+                    "Zona no autorizada",
+                    (
+                        "No está autorizado el envío automático para:\n\n"
+                        + ", ".join(zonas_bloqueadas)
+                    ),
+                )
+                return
+
+        if enviar_automaticamente:
+
             if solo_primer_correo.get():
                 cantidad = "1 correo"
             else:
-                cantidad_por_zona = {
-                    "METROPOLITANA": 4,
-                    "SUROESTE": 1,
-                    "OCCIDENTE": 1,
-                    "TODAS": 6,
-                }
-
-                total_correos = cantidad_por_zona.get(
-                    zona_actual,
-                    1,
+                total_correos = sum(
+                    ZONAS[zona][
+                        "correos_estimados"
+                    ]
+                    for zona in zonas_actuales
                 )
 
                 cantidad = (
@@ -577,6 +748,7 @@ def crear_seguimiento_ans(panel) -> None:
                 (
                     f"Se enviarán automáticamente "
                     f"{cantidad}.\n\n"
+                    f"Zonas: {', '.join(zonas_actuales)}.\n\n"
                     f"Destino: {destino}.\n\n"
                     "Los mensajes no se abrirán para "
                     "revisión manual.\n\n"
@@ -605,8 +777,15 @@ def crear_seguimiento_ans(panel) -> None:
         )
 
         escribir_consola(
-            f"📍 Zona seleccionada: "
-            f"{zona_actual}"
+            "📍 Zonas seleccionadas: "
+            + ", ".join(zonas_actuales)
+        )
+
+        total_estimado = sum(
+            ZONAS[zona][
+                "correos_estimados"
+            ]
+            for zona in zonas_actuales
         )
 
         escribir_consola(
@@ -614,15 +793,7 @@ def crear_seguimiento_ans(panel) -> None:
             + (
                 "solo el primero"
                 if solo_primer_correo.get()
-                else (
-                    "4 correos metropolitanos"
-                    if zona_actual == "METROPOLITANA"
-                    else "1 correo de SUROESTE"
-                    if zona_actual == "SUROESTE"
-                    else "1 correo de OCCIDENTE"
-                    if zona_actual == "OCCIDENTE"
-                    else "todos los correos (6)"
-                )
+                else str(total_estimado)
             )
         )
 
@@ -641,7 +812,7 @@ def crear_seguimiento_ans(panel) -> None:
             args=(
                 enviar_automaticamente,
                 procesar_solo_primero,
-                zona_actual,
+                zonas_actuales,
             ),
             daemon=True,
         )

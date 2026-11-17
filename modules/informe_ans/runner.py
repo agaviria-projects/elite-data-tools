@@ -10,6 +10,11 @@ from modules.informe_ans.config.parametros import (
     CARPETA_HTML,
     SUBZONA_PROCESAR,
 )
+from modules.informe_ans.config.zonas import (
+    ZONAS,
+    zona_habilitada_revision,
+    zona_habilitada_envio,
+)
 
 from modules.informe_ans.models import (
     ConfiguracionEjecucion,
@@ -25,12 +30,6 @@ from modules.informe_ans.src.validador import validar_archivo_fenix
 
 CallbackMensaje = Callable[[str], None]
 
-ZONAS_VALIDAS = {
-    "METROPOLITANA",
-    "SUROESTE",
-    "OCCIDENTE",
-    "TODAS",
-}
 
 
 # Diagnóstico temporal: no altera datos, estados ni cálculos.
@@ -85,24 +84,62 @@ def ejecutar_informe_ans(
 
     inicio = perf_counter()
 
-    zona = normalizar_zona(
-        configuracion.zona
+    zonas = normalizar_zonas(
+        configuracion.zonas
     )
 
-    if zona not in ZONAS_VALIDAS:
+    if not zonas:
         raise ValueError(
-            "Zona no válida: "
-            f"{configuracion.zona}. "
-            "Opciones permitidas: "
-            "METROPOLITANA, SUROESTE, OCCIDENTE, TODAS."
+            "Debe seleccionar al menos una zona."
         )
+
+    zonas_desconocidas = [
+        zona
+        for zona in zonas
+        if zona not in ZONAS
+    ]
+
+    if zonas_desconocidas:
+        raise ValueError(
+            "Zona(s) no válida(s): "
+            + ", ".join(zonas_desconocidas)
+        )
+
+    if configuracion.enviar_automaticamente:
+
+        zonas_no_autorizadas = [
+            zona
+            for zona in zonas
+            if not zona_habilitada_envio(zona)
+        ]
+
+        if zonas_no_autorizadas:
+            raise ValueError(
+                "No está autorizado el envío automático para: "
+                + ", ".join(zonas_no_autorizadas)
+            )
+
+    else:
+
+        zonas_no_disponibles = [
+            zona
+            for zona in zonas
+            if not zona_habilitada_revision(zona)
+        ]
+
+        if zonas_no_disponibles:
+            raise ValueError(
+                "Zona(s) no disponible(s) para revisión: "
+                + ", ".join(zonas_no_disponibles)
+            )
 
     informar("=" * 68)
     informar("SEGUIMIENTO INTELIGENTE ANS")
     informar("=" * 68)
 
     informar(
-        f"📍 Zona seleccionada: {zona}"
+        "📍 Zonas seleccionadas: "
+        + ", ".join(zonas)
     )
 
     informar("📄 Validando archivo FENIX...")
@@ -126,106 +163,80 @@ def ejecutar_informe_ans(
 
     correos = []
 
-    if zona in (
-        "METROPOLITANA",
-        "TODAS",
-    ):
-        informar(
-            "📊 Construyendo correos de METROPOLITANA..."
-        )
+    for zona in zonas:
 
-        df_metro = df[
-            df["SUBZONA"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            .eq(
-                str(SUBZONA_PROCESAR)
-                .strip()
-                .upper()
+        if zona == "METROPOLITANA":
+
+            informar(
+                "📊 Construyendo correos de METROPOLITANA..."
             )
-        ].copy()
+
+            df_metro = df[
+                df["SUBZONA"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(
+                    str(SUBZONA_PROCESAR)
+                    .strip()
+                    .upper()
+                )
+            ].copy()
+
+            informar(
+                f"   Registros METROPOLITANA: "
+                f"{len(df_metro):,}"
+            )
+
+            informes_metro = construir_informes(
+                df_metro
+            )
+
+            correos_metro = construir_correos(
+                informes_metro
+            )
+
+            correos.extend(
+                correos_metro
+            )
+
+            informar(
+                f"✅ Correos metropolitanos preparados: "
+                f"{len(correos_metro)}"
+            )
+
+            continue
 
         informar(
-            f"   Registros METROPOLITANA: "
-            f"{len(df_metro):,}"
+            f"📊 Filtrando pedidos de {zona}..."
         )
 
-        informes_metro = construir_informes(
-            df_metro
-        )
-
-        correos_metro = construir_correos(
-            informes_metro
-        )
-
-        correos.extend(
-            correos_metro
-        )
-
-        informar(
-            f"✅ Correos metropolitanos preparados: "
-            f"{len(correos_metro)}"
-        )
-
-    if zona in (
-        "SUROESTE",
-        "TODAS",
-    ):
-        informar(
-            "📊 Filtrando pedidos de SUROESTE..."
-        )
-
-        correo_suroeste = construir_correo_zona(
+        correo_zona = construir_correo_zona(
             df=df,
-            zona="SUROESTE",
+            zona=zona,
         )
 
-        if correo_suroeste is not None:
+        if correo_zona is not None:
+
             correos.append(
-                correo_suroeste
+                correo_zona
             )
 
             informar(
-                "✅ Correo SUROESTE preparado: "
-                f"{correo_suroeste['total_pedidos']:,} pedidos."
+                f"✅ Correo {zona} preparado: "
+                f"{correo_zona['total_pedidos']:,} pedidos."
             )
+
         else:
-            informar(
-                "⚠ SUROESTE no tiene pedidos para procesar."
-            )
-
-    if zona in (
-        "OCCIDENTE",
-        "TODAS",
-    ):
-        informar(
-            "📊 Filtrando pedidos de OCCIDENTE..."
-        )
-
-        correo_occidente = construir_correo_zona(
-            df=df,
-            zona="OCCIDENTE",
-        )
-
-        if correo_occidente is not None:
-            correos.append(
-                correo_occidente
-            )
 
             informar(
-                "✅ Correo OCCIDENTE preparado: "
-                f"{correo_occidente['total_pedidos']:,} pedidos."
-            )
-        else:
-            informar(
-                "⚠ OCCIDENTE no tiene pedidos para procesar."
+                f"⚠ {zona} no tiene pedidos para procesar."
             )
 
     if not correos:
         raise ValueError(
             f"No se encontraron correos para procesar "
-            f"en la selección {zona}."
+            "en las zonas seleccionadas."
         )
 
     # ======================================================
@@ -396,7 +407,7 @@ def construir_correo_zona(
     zona: str,
 ) -> dict | None:
     """
-    Construye un único correo para SUROESTE u OCCIDENTE.
+    Construye un único correo consolidado para una zona.
 
     No separa por producto. Todos los pedidos de la zona
     se envían dentro de un único paquete.
@@ -523,15 +534,37 @@ def resumen_estado(
 def normalizar_zona(
     zona: str,
 ) -> str:
-    """
-    Normaliza el nombre recibido desde DataSuite.
-    """
-
     return (
         str(zona)
         .strip()
         .upper()
     )
+
+
+def normalizar_zonas(
+    zonas,
+) -> tuple[str, ...]:
+
+    resultado = []
+
+    for zona in zonas:
+
+        zona_normalizada = normalizar_zona(
+            zona
+        )
+
+        if (
+            zona_normalizada
+            and zona_normalizada not in resultado
+        ):
+            resultado.append(
+                zona_normalizada
+            )
+
+    return tuple(
+        resultado
+    )
+
 
 
 # ==========================================================

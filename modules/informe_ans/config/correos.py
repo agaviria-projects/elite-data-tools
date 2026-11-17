@@ -83,6 +83,24 @@ DESTINATARIOS = {
         "diego.durango@eliteingenieros.com.co",
     ],
 
+    # ------------------------------------------------------
+    # ORIENTE
+    # ------------------------------------------------------
+
+    "ORIENTE": [
+        "y.ortiz@eliteingenieros.com.co",
+        "s.atencio@eliteingenieros.com.co",
+    ],
+
+    # ------------------------------------------------------
+    # NORDESTE
+    # ------------------------------------------------------
+
+    "NORDESTE": [
+        "y.ortiz@eliteingenieros.com.co",
+        "s.atencio@eliteingenieros.com.co",
+    ],
+
 }
 
 
@@ -140,6 +158,21 @@ COPIAS = {
         "j.barbosa@eliteingenieros.com.co",
     ],
 
+    # ------------------------------------------------------
+    # ORIENTE
+    # ------------------------------------------------------
+
+    "ORIENTE": [
+        "j.barbosa@eliteingenieros.com.co",
+    ],
+
+    # ------------------------------------------------------
+    # NORDESTE
+    # ------------------------------------------------------
+
+    "NORDESTE": [
+        "j.barbosa@eliteingenieros.com.co",
+    ],
 }
 
 
