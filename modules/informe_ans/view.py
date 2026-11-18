@@ -301,11 +301,11 @@ def crear_seguimiento_ans(panel) -> None:
 
         texto_zona = nombre_zona
 
-        if not configuracion_zona.get(
-            "envio",
-            False,
-        ):
-            texto_zona += " (solo revisión)"
+        # if not configuracion_zona.get(
+        #     "envio",
+        #     False,
+        # ):
+        #     texto_zona += " (solo revisión)"
 
         def sincronizar_todas_autorizadas():
             """
