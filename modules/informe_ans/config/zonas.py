@@ -30,12 +30,12 @@ ZONAS = {
     },
     "ORIENTE": {
         "revision": True,
-        "envio": False,
+        "envio": True,
         "correos_estimados": 1,
     },
     "NORDESTE": {
         "revision": True,
-        "envio": False,
+        "envio": True,
         "correos_estimados": 1,
     },
 }

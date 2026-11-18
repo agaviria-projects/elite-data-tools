@@ -89,7 +89,8 @@ DESTINATARIOS = {
 
     "ORIENTE": [
         "y.ortiz@eliteingenieros.com.co",
-        "s.atencio@eliteingenieros.com.co",
+        "r.ballesteros@eliteingenieros.com.co",
+        "c.bedoya@eliteingenieros.com.co",
     ],
 
     # ------------------------------------------------------
@@ -98,7 +99,8 @@ DESTINATARIOS = {
 
     "NORDESTE": [
         "y.ortiz@eliteingenieros.com.co",
-        "s.atencio@eliteingenieros.com.co",
+        "r.ballesteros@eliteingenieros.com.co",
+        "c.bedoya@eliteingenieros.com.co",
     ],
 
 }
@@ -163,6 +165,7 @@ COPIAS = {
     # ------------------------------------------------------
 
     "ORIENTE": [
+        "s.atencio@eliteingenieros.com.co",
         "j.barbosa@eliteingenieros.com.co",
     ],
 
@@ -171,6 +174,7 @@ COPIAS = {
     # ------------------------------------------------------
 
     "NORDESTE": [
+        "s.atencio@eliteingenieros.com.co",
         "j.barbosa@eliteingenieros.com.co",
     ],
 }
