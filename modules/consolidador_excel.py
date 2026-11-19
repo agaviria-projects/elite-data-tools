@@ -182,7 +182,7 @@ def crear_consolidador_excel(panel):
 
         text="Consolidación de archivos Servitravel."
 
-    ).pack(anchor="w", pady=(0, 15))
+    ).pack(anchor="w", pady=(0, 8))
 
     # ======================================================
     # PANEL SUPERIOR
@@ -192,7 +192,7 @@ def crear_consolidador_excel(panel):
 
     superior.pack(
         fill="x",
-        pady=(20, 20)
+        pady=(8, 10)
     )
 
     superior.columnconfigure(0, weight=1)
@@ -262,18 +262,48 @@ def crear_consolidador_excel(panel):
     actualizar_estado()
 
     # ======================================================
+    # REQUISITOS DE ENTRADA
+    # ======================================================
+
+    frame_requisitos = ttk.Labelframe(
+        vista,
+        text="⚠ Requisitos de entrada",
+        padding=8
+    )
+
+    frame_requisitos.pack(
+        fill="x",
+        pady=(0, 10)
+    )
+
+    ttk.Label(
+        frame_requisitos,
+        text=(
+            "Nombres de Archivos: METROPOLITANA · ORIENTE · SUROESTE · "
+            "OCCIDENTE · NORDESTE\n"
+            "La Hoja principal obligatoria debe llamarse: RODAMIENTOS\n"
+            "Las Otras hojas: VIATICOS · PARQUEADEROS · PEAJES  |  "
+            "Verificar el período a consolidar."
+        ),
+        justify="left",
+        wraplength=950
+    ).pack(
+        anchor="w"
+    )
+
+    # ======================================================
     # EJECUCION
     # ======================================================
 
     frame_acciones = ttk.Labelframe(
         vista,
         text="Ejecución",
-        padding=20
+        padding=8
     )
 
     frame_acciones.pack(
         fill="x",
-        pady=(0, 20)
+        pady=(0, 10)
     )
 
     ttk.Button(
@@ -284,7 +314,7 @@ def crear_consolidador_excel(panel):
         cursor="hand2",
         command=ejecutar
     ).pack(
-        pady=10
+        pady=4
     )
 
     # ======================================================
@@ -304,7 +334,7 @@ def crear_consolidador_excel(panel):
 
     txt_consola = ttk.Text(
         frame_consola,
-        height=12
+        height=8
     )
 
     txt_consola.pack(
