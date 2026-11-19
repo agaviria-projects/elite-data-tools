@@ -64,10 +64,7 @@ def consolidar_anio(libro):
         # Determinar hoja origen
         # ==========================================
 
-        nombre_hoja = archivo.stem.upper()
-
-        if nombre_hoja == "METROPOLITANO":
-            nombre_hoja = "METRO-SUR"
+        nombre_hoja = "RODAMIENTOS"
 
         # ==========================================
         # Leer archivo origen
