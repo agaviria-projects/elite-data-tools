@@ -265,7 +265,8 @@ print(df_resultado.head(20))
 
 # --- 1) Reglas "UNO DE" (si aparece cualquiera del grupo, el grupo se considera cumplido)
 REGLAS_UNO_DE = {
-    # A12: si aparece 200092 o 200093 => OK (no faltante por ese grupo)
+    # A12: respaldo para exportes sin actividad. Con actividad informada,
+    # la regla contextual de abajo reemplaza este cruce genérico.
     "A12": [{"200092", "200093"}],
 
     # A05: UNO DE LOS CINCO (incluye 323739)
@@ -346,6 +347,87 @@ for _, r in df_entregados.iterrows():
     _entregados_map[k] = set(r["materiales_entregados"] or [])
 
 
+MEDIDORES_A12_AEJDO = {"200092", "200093", "200092P", "200093P"}
+
+
+def _suministros_a12(grupo):
+    """Solo SUM. Suminis es principal; item_res respalda filas sin suminis."""
+    filas = grupo.copy()
+    tipos = filas["tipo"].fillna("").astype(str).str.strip().str.upper()
+    filas = filas.loc[tipos.eq("SUM")]
+    codigos = filas["item_res"].fillna("").astype(str).str.strip().str.upper()
+    if "suminis" in filas.columns:
+        principales = filas["suminis"].fillna("").astype(str).str.strip().str.upper()
+        codigos = principales.where(principales.ne(""), codigos)
+    return set(codigos) - {""}
+
+
+def _contextos_a12(df_export_in):
+    """Actividades de A12 y suministros del mismo pedido, subzona y actividad."""
+    columnas = {"pedido", "subz", "actividad", "tipo", "item_cont", "item_res"}
+    if not columnas.issubset(df_export_in.columns):
+        return {}  # Conservar el comportamiento anterior si falta contexto.
+    datos = df_export_in[list(columnas) + (["suminis"] if "suminis" in df_export_in.columns else [])].copy()
+    for columna in datos.columns:
+        datos[columna] = datos[columna].fillna("").astype(str).str.strip().str.upper()
+    manos_a12 = datos.loc[
+        datos["tipo"].eq("CON") & datos["item_cont"].apply(normalizar_mo).eq("A12"),
+        ["pedido", "subz", "actividad"],
+    ].drop_duplicates()
+    if manos_a12.empty:
+        return {}
+    datos = datos.merge(manos_a12, on=["pedido", "subz", "actividad"], how="inner")
+    contextos = {}
+    for clave, grupo in datos.groupby(["pedido", "subz", "actividad"], sort=False):
+        pedido, subzona, actividad = clave
+        contextos.setdefault((pedido, subzona), {})[actividad] = _suministros_a12(grupo)
+    return contextos
+
+
+def _evaluar_a12_por_actividad(obligatorios, entregados, contextos):
+    """A12 mantiene una fila en VALIDACION; cada actividad se verifica aparte.
+
+    No se cruzan suministros de otra actividad o subzona para cumplir la regla.
+    Los demás códigos de la Maestra y las alertas independientes se conservan.
+    """
+    if not contextos or "" in contextos:
+        return None  # No deducir una actividad ausente; conservar cruce anterior.
+    base = set(obligatorios)
+    medidores_y_cale = MEDIDORES_A12_AEJDO | {"CALE1F"}
+    controlados = medidores_y_cale | {"200098", "215887", "219404"}
+    generales, faltantes, permitidos = set(), set(), set(base)
+    entregados = set(entregados)
+    for actividad, suministros in contextos.items():
+        # Los materiales de otras reglas de la Maestra siguen evaluándose.
+        generales.update(base - (controlados if actividad in {"AEJDO", "DSPRE"} else medidores_y_cale))
+        if actividad == "AEJDO":
+            requeridos = {"CALE1F", "215887", "219404"}
+            permitidos.update(requeridos | MEDIDORES_A12_AEJDO)
+            faltantes.update(requeridos - suministros)
+            if not suministros.intersection(MEDIDORES_A12_AEJDO):
+                faltantes.add("200092 o 200093 o 200092P o 200093P")
+        elif actividad == "DSPRE":
+            requeridos = {"200098", "219404"}
+            permitidos.update(requeridos)
+            faltantes.update(requeridos - suministros)
+        # Reconocer los códigos controlados si Fénix solo los trae en suminis.
+        entregados.update(suministros & controlados)
+    faltantes.update(generales - entregados)
+    sobrantes = entregados - permitidos
+    faltantes_txt = ", ".join(sorted(faltantes))
+    sobrantes_txt = ", ".join(sorted(sobrantes))
+    if faltantes and sobrantes:
+        return "Faltan y sobran materiales", "AMBOS", faltantes_txt, sobrantes_txt
+    if faltantes:
+        return "Faltan materiales obligatorios", "FALTAN", faltantes_txt, ""
+    if sobrantes:
+        return "Materiales sobrantes", "SOBRAN", "", sobrantes_txt
+    return "Materiales correctos", "OK", "", ""
+
+
+_contextos_a12_map = _contextos_a12(df_export)
+
+
 # --- 4) Post-proceso de df_resultado: corrige A05/A12/A23 y aplica ignorados para Cxx (sobrantes)
 def _post_procesar_validacion(df_resultado_in):
     df = df_resultado_in.copy()
@@ -402,6 +484,18 @@ def _post_procesar_validacion(df_resultado_in):
                 entregados
             )
         )
+
+        if mo == "A12":
+            contexto_a12 = _contextos_a12_map.get((pedido.strip().upper(), subz.strip().upper()))
+            # Usar la Maestra original: el UNO_DE genérico no puede decidir
+            # los materiales antes de conocer la actividad de la mano de obra.
+            base_a12 = set(mo_to_materiales.get(mo, []))
+            for material, subzonas_permitidas in MATERIALES_SOLO_POR_SUBZONA.items():
+                if subz not in subzonas_permitidas:
+                    base_a12.discard(material)
+            evaluacion_a12 = _evaluar_a12_por_actividad(base_a12, entregados, contexto_a12)
+            if evaluacion_a12 is not None:
+                estado, estado_codigo, faltantes_str, sobrantes_str = evaluacion_a12
 
         # ============================================================
         # 🔴 ALERTA ESPECÍFICA A31 (conflicto + cantidad)
@@ -3096,7 +3190,8 @@ def validar_reglas_actividades(df_export_in):
                     )
 
             # A12 es una mano de obra y se busca en item_cont.
-            # CALE1F es un suministro y se busca en item_res.
+            # Para A12 los suministros se toman solo de SUM, con suminis
+            # como fuente principal e item_res cuando suminis está vacío.
             # La regla solo genera alerta cuando aparece uno de
             # los dos lados sin su correspondiente contraparte.
             alternativas_a12 = {"A12U", "A12R"}
@@ -3105,7 +3200,8 @@ def validar_reglas_actividades(df_export_in):
                 items_cont & alternativas_a12
             )
             tiene_a12 = bool(a12_encontrados)
-            tiene_cale1f = "CALE1F" in suministros
+            suministros_a12 = _suministros_a12(grupo)
+            tiene_cale1f = "CALE1F" in suministros_a12
 
             items_faltantes_relacion = []
             suministros_faltantes_relacion = []
@@ -3142,15 +3238,15 @@ def validar_reglas_actividades(df_export_in):
                     ),
                 )
 
-            # Con A12 debe existir uno de los dos medidores y ambos
+            # Con A12 debe existir uno de los cuatro medidores y ambos
             # suministros 215887 y 219404. CALE1F se controla arriba.
             if tiene_a12:
                 faltantes_a12 = []
-                if not (suministros & {"200092", "200093"}):
-                    faltantes_a12.append("200092 o 200093")
+                if not (suministros_a12 & MEDIDORES_A12_AEJDO):
+                    faltantes_a12.append("200092 o 200093 o 200092P o 200093P")
                 faltantes_a12.extend(
                     codigo for codigo in ("215887", "219404")
-                    if codigo not in suministros
+                    if codigo not in suministros_a12
                 )
                 if faltantes_a12:
                     agregar_alerta_actividad(
@@ -3159,11 +3255,11 @@ def validar_reglas_actividades(df_export_in):
                         a12_encontrados,
                         [],
                         "Si AEJDO tiene A12U o A12R, debe incluir 200092 o "
-                        "200093 y, además, los suministros 215887 y 219404. "
+                        "200093 o 200092P o 200093P y, además, los suministros 215887 y 219404. "
                         "CALE1F se valida en la regla A12/CALE1F.",
                         suministros_encontrados=sorted(
-                            suministros
-                            & {"200092", "200093", "215887", "219404"}
+                            suministros_a12
+                            & (MEDIDORES_A12_AEJDO | {"215887", "219404"})
                         ),
                         suministros_faltantes=faltantes_a12,
                     )
@@ -3214,6 +3310,11 @@ def validar_reglas_actividades(df_export_in):
                 "A07": {
                     "materiales": {"200384"},
                     "modo": "todos",
+                },
+                # AEJDO: A31U/R requiere al menos uno de estos suministros.
+                "A31": {
+                    "materiales": {"211618", "211618A"},
+                    "modo": "uno",
                 },
                 "A32": {
                     "materiales": {"200151A", "211319A"},
@@ -3278,6 +3379,34 @@ def validar_reglas_actividades(df_export_in):
                             ),
                         )
 
+            # AEJDO: validacion inversa. Un suministro de estas familias
+            # requiere su mano de obra A31U/R o A32U/R en la misma actividad.
+            # Se consultan solo filas SUM y CON para evitar falsos cruces.
+            filas_sum_inversa = grupo.loc[grupo["tipo"].eq("SUM")]
+            suministros_inversa = set(filas_sum_inversa["suminis"]) | set(
+                filas_sum_inversa["item_res"]
+            )
+            filas_con_inversa = grupo.loc[grupo["tipo"].eq("CON")]
+            manos_obra_inversa = set(filas_con_inversa["item_cont"])
+            reglas_inversas_aejdo = {
+                "A31": {"211618", "211618A"},
+                "A32": {"211319A"},
+            }
+            for base_mo, codigos_activadores in reglas_inversas_aejdo.items():
+                encontrados_inversa = sorted(suministros_inversa & codigos_activadores)
+                esperados_inversa = {f"{base_mo}U", f"{base_mo}R"}
+                if encontrados_inversa and not (manos_obra_inversa & esperados_inversa):
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad,
+                        f"REGLA_AEJDO_{base_mo}_SIN_MO",
+                        [], [f"{base_mo}U o {base_mo}R"],
+                        "En AEJDO se encontro el suministro "
+                        + " o ".join(encontrados_inversa)
+                        + f" sin la mano de obra {base_mo}U o {base_mo}R "
+                        "en el mismo pedido, subzona y actividad.",
+                        suministros_encontrados=encontrados_inversa,
+                    )
+
             # Reglas activadas por suministros.
             reglas_suministro = {
                 "200092": {"200410", "200492"},
@@ -3336,6 +3465,22 @@ def validar_reglas_actividades(df_export_in):
         # ====================================================
 
         elif actividad == "DSPRE":
+
+            # A12 en DSPRE tiene su propia relación de materiales. No se
+            # exige aquí el grupo de medidores ni CALE1F de AEJDO.
+            a12_dspre = sorted(items_cont & {"A12U", "A12R"})
+            if a12_dspre:
+                suministros_a12 = _suministros_a12(grupo)
+                faltantes_a12_dspre = sorted({"200098", "219404"} - suministros_a12)
+                if faltantes_a12_dspre:
+                    agregar_alerta_actividad(
+                        pedido, subzona, actividad,
+                        "REGLA_DSPRE_A12_MATERIALES", a12_dspre, [],
+                        "Si DSPRE tiene A12U o A12R, debe incluir ambos suministros: "
+                        "200098 y 219404. Falta: " + ", ".join(faltantes_a12_dspre) + ".",
+                        suministros_encontrados=sorted(suministros_a12 & {"200098", "219404"}),
+                        suministros_faltantes=faltantes_a12_dspre,
+                    )
 
             tipres_grupo = {
                 valor for valor in grupo["tipre"] if valor
@@ -5761,7 +5906,8 @@ if "GUIA_REGLAS" in wb.sheetnames:
     agregar_tabla_guia(
         ["Mano de obra", "Suministros alternativos", "Aplicación de la regla"],
         [
-            ["A12", "200092 o 200093", "La presencia de cualquiera de los dos cumple el grupo."],
+            ["A12U/R en AEJDO", "200092, 200093, 200092P o 200093P", "Uno de los cuatro medidores es suficiente. CALE1F es obligatorio; se conservan 215887 y 219404. Este grupo no se exige a A12 de otras actividades."],
+            ["A12U/R en DSPRE", "200098 y 219404", "Ambos suministros son obligatorios. No se exige el grupo de medidores ni CALE1F por la regla de A12."],
             ["A05", "200492, 200410, 200411, 200493 o 323739", "La presencia de cualquiera de los cinco cumple el grupo."],
             ["A23", "200493, 200411, 200492 o 200410", "La presencia de cualquiera de los cuatro cumple el grupo."],
             ["A17", "210954 o 210949", "La presencia de cualquiera de los dos cumple el grupo."],
@@ -6060,7 +6206,7 @@ if "GUIA_REGLAS" in wb.sheetnames:
             ["A18U o A18R", "Debe llevar obligatoriamente el suministro 211357.", "REGLA_AEJDO_A18."],
             ["A18U o A18R en AEJDO o INPRE", "Debe registrar A19U o A19R con la misma terminación, en el mismo pedido, subzona y actividad.", "REGLA_A18_REQUIERE_A19."],
             ["A11U o A11R en INPRE", "Debe existir obligatoriamente el suministro 211686 en el mismo pedido, subzona y actividad.", "REGLA_INPRE_A11_211686: falta el suministro 211686."],
-            ["A12U o A12R en AEJDO", "Debe llevar uno de los medidores 200092/200093 y ambos suministros 215887 y 219404. También debe llevar CALE1F.", "REGLA_AEJDO_A12_MATERIALES; la falta de CALE1F se señala en REGLA_AEJDO."],
+            ["A12U o A12R en AEJDO", "Debe llevar uno de los medidores 200092, 200093, 200092P o 200093P y ambos suministros 215887 y 219404. También debe llevar CALE1F. Esta relación de A12 depende de la actividad y no se exige de forma general en VALIDACION.", "REGLA_AEJDO_A12_MATERIALES; la falta de CALE1F se señala en REGLA_AEJDO."],
             ["A02U o A02R", "Debe llevar A06U/R o A08U/R con la misma terminación. Uno de los dos es suficiente.", "REGLA_AEJDO_A02."],
             ["A10U o A10R", "Debe llevar A12U/R con la misma terminación.", "REGLA_AEJDO_A10."],
             ["A07U o A07R", "Debe llevar obligatoriamente el suministro 200384.", "REGLA_AEJDO_A07."],
@@ -6125,6 +6271,13 @@ if "GUIA_REGLAS" in wb.sheetnames:
                 "B17_INCLUYE_INSTALACION_INTERRUPTORES.",
             ],
         ],
+    )
+    agregar_texto_guia(
+        "A12U/R en la actividad DSPRE requiere ambos suministros 200098 y "
+        "219404, independientemente del tipre. Si falta alguno se genera "
+        "REGLA_DSPRE_A12_MATERIALES. No se exige el grupo de medidores ni "
+        "CALE1F por esta regla; esa relación de A12 corresponde a AEJDO.",
+        altura=48,
     )
     agregar_texto_guia(
         "Reglas de DSPRE según tipre: la validación reconoce los códigos con "
